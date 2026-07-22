@@ -1,0 +1,40 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8082:8080"
+    environment:
+      - PORT=8080
+      - REDIS_URL=redis://redis:6380
+      - DATABASE_URL=postgres://lexio:lexio@postgres:5432/lexio
+    depends_on:
+      redis:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=lexio
+      - POSTGRES_PASSWORD=lexio
+      - POSTGRES_DB=lexio
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lexio"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+
+volumes:
+  redis-data:
+  pg-data:

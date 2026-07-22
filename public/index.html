@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>렉시오 온라인</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="rotate-overlay">
+  <div class="rotate-inner">
+    <div class="rotate-icon">📱</div>
+    <p>가로 모드로 돌려주세요</p>
+  </div>
+</div>
+
+<!-- ================= 로비 ================= -->
+<section id="screen-lobby" class="screen">
+  <div class="lobby-wrap">
+    <header class="lobby-header">
+      <h1>LEXIO <span>렉시오 온라인</span></h1>
+    </header>
+    <div id="invite-banner" class="panel invite-banner hidden">
+      <span>🔗 초대받은 방 <strong id="invite-room-name">-</strong>에 입장합니다. 닉네임을 확인하고 입장하세요.</span>
+      <button id="btn-invite-join" class="btn gold small">입장하기</button>
+    </div>
+    <div class="lobby-body">
+      <div class="lobby-left panel">
+        <h2>내 정보</h2>
+        <label class="field">
+          <span>닉네임</span>
+          <input id="input-name" maxlength="12" placeholder="닉네임 입력">
+        </label>
+        <h2>방 만들기</h2>
+        <label class="field">
+          <span>방 이름</span>
+          <input id="input-room-name" maxlength="20" placeholder="방 이름">
+        </label>
+        <label class="field">
+          <span>비밀번호</span>
+          <input id="input-room-pw" maxlength="20" placeholder="(선택) 비밀번호">
+        </label>
+        <label class="field">
+          <span>최대 인원</span>
+          <select id="input-room-max">
+            <option value="3">3인</option>
+            <option value="4">4인</option>
+            <option value="5" selected>5인</option>
+          </select>
+        </label>
+        <button id="btn-create" class="btn gold">방 만들기</button>
+      </div>
+      <div class="lobby-right panel">
+        <h2>게임 대기룸 목록</h2>
+        <ul id="room-list" class="room-list"></ul>
+        <p id="room-list-empty" class="muted">아직 열린 방이 없습니다. 새 방을 만들어 보세요!</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 대기실 ================= -->
+<section id="screen-room" class="screen">
+  <div class="room-wrap">
+    <header class="room-header">
+      <h2 id="room-title">방 이름</h2>
+      <div class="room-header-right">
+        <button id="btn-invite" class="btn small">🔗 초대 링크 복사</button>
+        <button id="btn-leave" class="btn small danger">나가기</button>
+      </div>
+    </header>
+    <div class="room-body">
+      <div id="room-seats" class="room-seats"></div>
+      <div class="room-controls panel">
+        <div id="host-controls" class="host-controls">
+          <label class="field inline">
+            <span>최대 인원</span>
+            <select id="select-max">
+              <option value="3">3인</option>
+              <option value="4">4인</option>
+              <option value="5">5인</option>
+            </select>
+          </label>
+          <div class="field inline">
+            <span>칩 개수</span>
+            <div class="stepper">
+              <button id="btn-chips-minus" class="btn tiny">−50</button>
+              <span id="chips-value" class="stepper-value">50</span>
+              <button id="btn-chips-plus" class="btn tiny">+50</button>
+            </div>
+          </div>
+          <button id="btn-add-bot" class="btn small">🤖 봇 추가</button>
+        </div>
+        <div class="room-actions">
+          <button id="btn-ready" class="btn">준비</button>
+          <button id="btn-start" class="btn gold">게임 시작</button>
+        </div>
+        <p class="muted small-text">3~5인 필요 · 부족한 인원은 봇으로 채울 수 있습니다</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 게임 ================= -->
+<section id="screen-game" class="screen">
+  <canvas id="game-canvas"></canvas>
+  <div id="game-hud">
+    <div class="hud-top-left">
+      <span id="game-room-name"></span>
+      <button id="btn-game-leave" class="btn tiny danger">나가기</button>
+    </div>
+    <div class="hud-right">
+      <button id="btn-assist" class="btn hud-btn">조합<br>보기</button>
+      <button id="btn-sort" class="btn hud-btn">정렬</button>
+      <button id="btn-pass" class="btn hud-btn pass">패스</button>
+      <button id="btn-play" class="btn hud-btn gold" disabled>내기</button>
+    </div>
+  </div>
+
+  <!-- 어시스트 팝업 -->
+  <div id="assist-popup" class="popup hidden">
+    <div class="popup-inner panel">
+      <header><h3>내 조합 어시스트</h3><button class="popup-close" data-close="assist-popup">✕</button></header>
+      <div id="assist-body" class="assist-body"></div>
+      <p class="muted small-text">조합을 누르면 해당 타일이 선택됩니다.</p>
+    </div>
+  </div>
+
+  <!-- 라운드/매치 결과 팝업 -->
+  <div id="result-popup" class="popup hidden">
+    <div class="popup-inner panel">
+      <header><h3 id="result-title">라운드 결과</h3></header>
+      <div id="result-body"></div>
+      <div class="popup-actions">
+        <button id="btn-result-ready" class="btn gold">준비 완료</button>
+        <button id="btn-result-room" class="btn">대기실로</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="toast"></div>
+
+<script src="shared/lexio-core.js"></script>
+<script src="js/sound.js"></script>
+<script src="js/game-ui.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

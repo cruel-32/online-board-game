@@ -1,0 +1,230 @@
+/* ===== 렉시오 온라인 ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+  background: radial-gradient(ellipse at 50% 30%, #1d1a2b 0%, #0e0d15 70%);
+  color: #ece7dc;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.screen { display: none; position: fixed; inset: 0; }
+.screen.active { display: block; }
+
+.panel {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 215, 130, 0.18);
+  border-radius: 12px;
+  padding: 14px;
+  backdrop-filter: blur(6px);
+}
+.muted { color: #9a93a8; font-size: 13px; }
+.small-text { font-size: 11px; margin-top: 6px; }
+
+/* ---- 버튼 ---- */
+.btn {
+  border: 1px solid rgba(255, 215, 130, 0.35);
+  background: linear-gradient(180deg, #3a3550, #262238);
+  color: #ece7dc;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.06s, filter 0.15s;
+}
+.btn:active { transform: scale(0.96); }
+.btn:disabled { opacity: 0.35; pointer-events: none; }
+.btn.gold {
+  background: linear-gradient(180deg, #e8b64c, #b8862f);
+  border-color: #f5d98b;
+  color: #241a05;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+.btn.danger { background: linear-gradient(180deg, #7a3040, #55202c); border-color: #c76; }
+.btn.small { padding: 7px 12px; font-size: 12px; }
+.btn.tiny { padding: 4px 9px; font-size: 11px; }
+
+/* ---- 회전 안내 ---- */
+#rotate-overlay {
+  display: none; position: fixed; inset: 0; z-index: 1000;
+  background: #0e0d15; text-align: center;
+}
+.rotate-inner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
+.rotate-icon { font-size: 52px; animation: rotatePhone 1.6s ease-in-out infinite; }
+@keyframes rotatePhone { 0%,20% { transform: rotate(0); } 60%,100% { transform: rotate(90deg); } }
+@media (orientation: portrait) { #rotate-overlay { display: block; } }
+
+/* ================= 로비 ================= */
+.lobby-wrap {
+  height: 100%; display: flex; flex-direction: column;
+  padding: max(8px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left));
+  max-width: 900px; margin: 0 auto;
+}
+.lobby-header h1 {
+  font-size: 22px; letter-spacing: 4px; color: #f0c25a;
+  text-shadow: 0 0 18px rgba(240, 194, 90, 0.45);
+}
+.lobby-header h1 span { font-size: 12px; letter-spacing: 1px; color: #b7aec5; margin-left: 6px; }
+.invite-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 8px; font-size: 13px; border-color: rgba(255, 215, 130, 0.4);
+}
+.invite-banner.hidden { display: none; }
+.invite-banner strong { color: #ffd76e; }
+.lobby-body { flex: 1; display: flex; gap: 12px; margin-top: 8px; min-height: 0; }
+.lobby-left { width: 250px; overflow-y: auto; }
+.lobby-right { flex: 1; overflow-y: auto; }
+.panel h2 { font-size: 13px; color: #f0c25a; margin: 10px 0 6px; }
+.panel h2:first-child { margin-top: 0; }
+.field { display: block; margin-bottom: 8px; font-size: 12px; }
+.field span { display: block; color: #9a93a8; margin-bottom: 3px; }
+.field.inline { display: flex; align-items: center; gap: 8px; margin: 0; }
+.field.inline span { margin: 0; }
+input, select {
+  width: 100%; padding: 9px 10px; border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.35); color: #ece7dc; font-size: 14px;
+}
+.field.inline select { width: auto; }
+.stepper { display: flex; align-items: center; gap: 8px; }
+.stepper-value { min-width: 34px; text-align: center; font-weight: 700; color: #ffd76e; font-size: 14px; }
+#btn-create { width: 100%; margin-top: 4px; }
+
+.room-list { list-style: none; }
+.room-list li {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; margin-bottom: 8px; border-radius: 10px;
+  background: rgba(0, 0, 0, 0.3); border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+.room-list li:active { background: rgba(240, 194, 90, 0.12); }
+.room-list .rname { font-weight: 700; font-size: 14px; }
+.room-list .rmeta { font-size: 12px; color: #9a93a8; }
+.room-list .rstate { font-size: 11px; padding: 3px 8px; border-radius: 20px; background: #2f5c37; }
+.room-list .rstate.playing { background: #6b3535; }
+
+/* ================= 대기실 ================= */
+.room-wrap {
+  height: 100%; display: flex; flex-direction: column;
+  padding: max(8px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) 8px max(14px, env(safe-area-inset-left));
+  max-width: 900px; margin: 0 auto;
+}
+.room-header { display: flex; align-items: center; justify-content: space-between; }
+.room-header h2 { font-size: 17px; color: #f0c25a; }
+.room-header-right { display: flex; gap: 8px; }
+.room-body { flex: 1; display: flex; gap: 12px; margin-top: 8px; min-height: 0; }
+.room-seats {
+  flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px; align-content: start; overflow-y: auto;
+}
+.seat-card {
+  position: relative; border-radius: 12px; padding: 12px;
+  background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+  min-height: 84px;
+}
+.seat-card.empty { border-style: dashed; color: #6f6a80; display: flex; align-items: center; justify-content: center; font-size: 13px; }
+.seat-card .sname { font-weight: 700; font-size: 14px; }
+.seat-card .stags { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+.tag { font-size: 10px; padding: 2px 7px; border-radius: 20px; background: #3a3550; }
+.tag.host { background: #8a6a1e; color: #ffe9b0; }
+.tag.ready { background: #2f5c37; color: #bef0c6; }
+.tag.bot { background: #444; }
+.tag.off { background: #6b3535; }
+.seat-kick {
+  position: absolute; top: 6px; right: 6px;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: none; background: #55202c; color: #f8c; cursor: pointer; font-size: 11px;
+}
+.room-controls { width: 220px; display: flex; flex-direction: column; gap: 10px; }
+.host-controls { display: flex; flex-direction: column; gap: 8px; }
+.room-actions { display: flex; flex-direction: column; gap: 8px; }
+.room-actions .btn { width: 100%; }
+#btn-ready.on { background: linear-gradient(180deg, #3f7a4b, #2c5636); border-color: #7fc98e; }
+
+/* ================= 게임 ================= */
+#screen-game { background: radial-gradient(ellipse at 50% 20%, #241f33 0%, #0b0a10 75%); }
+#game-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+
+#game-hud { position: absolute; inset: 0; pointer-events: none; }
+#game-hud .btn { pointer-events: auto; }
+.hud-top-left {
+  position: absolute; top: max(6px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left));
+  display: flex; align-items: center; gap: 8px; font-size: 12px; color: #b7aec5;
+}
+.hud-right {
+  position: absolute; right: max(6px, env(safe-area-inset-right)); bottom: 10px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.hud-btn { width: 58px; padding: 8px 4px; font-size: 12px; line-height: 1.25; }
+.hud-btn.pass { background: linear-gradient(180deg, #5a3550, #3a2238); }
+
+/* ---- 팝업 ---- */
+.popup {
+  position: absolute; inset: 0; z-index: 50;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex; align-items: center; justify-content: center;
+}
+.popup.hidden { display: none; }
+.popup-inner {
+  width: min(480px, 92vw); max-height: 86vh; overflow-y: auto;
+  background: rgba(24, 21, 36, 0.97);
+}
+.popup-inner header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.popup-inner h3 { color: #f0c25a; font-size: 15px; }
+.popup-close { background: none; border: none; color: #9a93a8; font-size: 16px; cursor: pointer; }
+.popup-actions { display: flex; gap: 8px; margin-top: 12px; }
+.popup-actions .btn { flex: 1; }
+
+/* 어시스트 */
+.assist-body { max-height: 55vh; overflow-y: auto; }
+.assist-group-title { font-size: 12px; color: #f0c25a; margin: 8px 0 4px; }
+.assist-row {
+  display: flex; gap: 3px; padding: 5px; border-radius: 8px; cursor: pointer;
+  flex-wrap: wrap; align-items: center;
+}
+.assist-row:active { background: rgba(240, 194, 90, 0.15); }
+.mini-tile {
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 26px; height: 34px; border-radius: 4px;
+  background: #17151f; border: 1px solid #3a3550;
+  font-size: 12px; font-weight: 800; line-height: 1;
+}
+.mini-tile small { font-size: 8px; }
+.mini-tile.sun { color: #ff6b57; }
+.mini-tile.moon { color: #52d273; }
+.mini-tile.star { color: #ffd23e; }
+.mini-tile.cloud { color: #4db3ff; }
+.assist-empty { color: #9a93a8; font-size: 13px; padding: 8px 0; }
+
+/* 결과 테이블 */
+.result-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.result-table th, .result-table td { padding: 7px 6px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.result-table th { color: #9a93a8; font-weight: 400; font-size: 11px; }
+.result-table .r1 td { color: #ffd76e; font-weight: 800; }
+.result-table .delta-plus { color: #7fe08d; }
+.result-table .delta-minus { color: #ff8f8f; }
+.result-busted { margin-top: 10px; color: #ff8f8f; font-size: 13px; text-align: center; }
+.result-champion { margin-top: 8px; text-align: center; font-size: 15px; color: #ffd76e; }
+
+/* 토스트 */
+#toast {
+  position: fixed; left: 50%; top: 14%; transform: translateX(-50%);
+  background: rgba(20, 16, 30, 0.95); border: 1px solid rgba(255, 140, 140, 0.4);
+  color: #ffd9d9; padding: 10px 18px; border-radius: 24px; font-size: 13px;
+  opacity: 0; pointer-events: none; transition: opacity 0.25s; z-index: 2000;
+  max-width: 80vw; text-align: center;
+}
+#toast.show { opacity: 1; }
+
+/* 아이폰 SE 가로(568~667 x 320~375) 대응 */
+@media (max-height: 400px) {
+  .lobby-left { width: 210px; }
+  .panel { padding: 10px; }
+  .btn { padding: 8px 12px; font-size: 13px; }
+  .hud-btn { width: 52px; padding: 6px 3px; font-size: 11px; }
+  .room-controls { width: 190px; }
+  input, select { padding: 7px 8px; font-size: 13px; }
+}
