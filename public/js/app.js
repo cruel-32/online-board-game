@@ -53,6 +53,12 @@
   document.querySelectorAll('.popup-close').forEach((b) => {
     b.addEventListener('click', () => closePopup(b.dataset.close));
   });
+  // 어시스트/게임룰처럼 'dismissable' 팝업은 배경(팝업 바깥 어두운 영역)을 클릭해도 닫힌다.
+  document.querySelectorAll('.popup.dismissable').forEach((p) => {
+    p.addEventListener('click', (e) => {
+      if (e.target === p) closePopup(p.id);
+    });
+  });
 
   /* ---------- WebSocket ---------- */
   function connect() {
@@ -446,6 +452,7 @@
     renderAssist();
     openPopup('assist-popup');
   });
+  $('btn-rules').addEventListener('click', () => openPopup('rules-popup'));
 
   /* ---------- 어시스트 팝업 ---------- */
   function miniTileHtml(t) {

@@ -181,6 +181,14 @@ input, select {
 /* 어시스트 */
 .assist-body { max-height: 55vh; overflow-y: auto; }
 .assist-group-title { font-size: 12px; color: #f0c25a; margin: 8px 0 4px; }
+.assist-group-title:first-child { margin-top: 0; }
+
+/* 게임룰 팝업 */
+.rules-body { font-size: 13px; line-height: 1.55; color: #d8d2e4; }
+.rules-body p { margin-bottom: 4px; }
+.rules-body ul { padding-left: 18px; margin-bottom: 4px; }
+.rules-body li { margin-bottom: 2px; }
+.rules-body strong { color: #ffd76e; }
 .assist-row {
   display: flex; gap: 3px; padding: 5px; border-radius: 8px; cursor: pointer;
   flex-wrap: wrap; align-items: center;
