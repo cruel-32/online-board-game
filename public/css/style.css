@@ -152,19 +152,20 @@ input, select {
   background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 20px; padding: 5px 10px 5px 8px;
   font-size: 11px; color: #d8d2e4; cursor: pointer; pointer-events: auto;
-  user-select: none; -webkit-user-select: none;
+  user-select: none; -webkit-user-select: none; white-space: nowrap;
 }
 .autopass-toggle input { width: 13px; height: 13px; accent-color: #f0c25a; cursor: pointer; }
 .hud-right {
   position: absolute; right: max(6px, env(safe-area-inset-right)); bottom: 10px;
-  display: flex; flex-direction: column; gap: 16px;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
 }
 .hud-secondary { display: flex; flex-direction: column; gap: 6px; }
-.hud-btn { width: 58px; padding: 8px 4px; font-size: 12px; line-height: 1.25; }
-/* 패스/내기: 자주 눌러야 하는 핵심 버튼이라 오조작 방지를 위해 훨씬 크게, 서로 간격도 넉넉하게 둔다 */
+.hud-btn { width: 76px; padding: 8px 4px; font-size: 12px; line-height: 1.25; }
+/* 패스/내기: 자주 눌러야 하는 핵심 버튼이라 오조작 방지를 위해 훨씬 크게, 서로 간격도 넉넉하게 둔다.
+   조합보기/정렬/게임룰과 가로 폭을 맞춰 나란히 정렬되도록 한다. */
 .hud-main { display: flex; flex-direction: column; gap: 16px; }
 .hud-btn-main {
-  width: 92px; min-height: 62px; padding: 10px 6px;
+  width: 76px; min-height: 62px; padding: 10px 6px;
   font-size: 19px; font-weight: 800; line-height: 1.2;
 }
 .hud-btn-main.pass { background: linear-gradient(180deg, #5a3550, #3a2238); }
@@ -320,15 +321,26 @@ input, select {
 }
 #toast.show { opacity: 1; }
 
+/* 오토패스 안내: 놓치기 쉬우므로 화면 정가운데에 큼직하게 표시 */
+.autopass-notice {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  background: rgba(20, 16, 30, 0.92); border: 1px solid rgba(255, 215, 130, 0.5);
+  color: #ffe9b0; padding: 18px 28px; border-radius: 16px;
+  font-size: 22px; font-weight: 800; text-align: center;
+  opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 2500;
+  max-width: 86vw; box-shadow: 0 0 24px rgba(255, 215, 130, 0.25);
+}
+.autopass-notice.show { opacity: 1; }
+
 /* 아이폰 SE 가로(568~667 x 320~375) 대응 */
 @media (max-height: 400px) {
   .lobby-left { width: 210px; }
   .panel { padding: 10px; }
   .btn { padding: 8px 12px; font-size: 13px; }
-  .hud-btn { width: 52px; padding: 6px 3px; font-size: 11px; }
+  .hud-btn { width: 62px; padding: 6px 3px; font-size: 11px; }
   .hud-right { gap: 10px; }
   .hud-main { gap: 10px; }
-  .hud-btn-main { width: 76px; min-height: 48px; padding: 6px 4px; font-size: 15px; }
+  .hud-btn-main { width: 62px; min-height: 48px; padding: 6px 4px; font-size: 15px; }
   .room-controls { width: 220px; }
   .room-footer-actions .btn { padding: 6px 8px; font-size: 11px; }
   input, select { padding: 7px 8px; font-size: 13px; }

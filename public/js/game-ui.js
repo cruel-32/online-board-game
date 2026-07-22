@@ -222,7 +222,7 @@
       const c0 = twoRows ? Math.ceil(n / 2) : n;   // 앞줄(화면 하단, 더 많은 쪽) 개수
       const c1 = twoRows ? n - c0 : 0;              // 뒷줄(앞줄 위쪽) 개수
       const maxCount = Math.max(c0, c1, 1);
-      const hudReserve = (H < 400 ? 76 : 92) + 40; // 오른쪽 패스/내기 버튼(커짐) 영역 + 여유
+      const hudReserve = (H < 400 ? 62 : 76) + 40; // 오른쪽 패스/내기 버튼 영역 + 여유
       const availW = W - hudReserve;
 
       let tw = H < 380 ? 38 : 44; // 손패 칸 크기를 줄여 위쪽 정보 영역과의 겹침을 방지
@@ -420,12 +420,14 @@
       g.addColorStop(1, '#0b0a10');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, this.W, this.H);
-      // 은은한 스포트라이트
+      // 은은한 스포트라이트 — 테이블과 마찬가지로 세로로 긴 타원이 되지 않도록 제한
+      const spotRx = this.W * 0.42;
+      const spotRy = Math.min(this.H * 0.34, spotRx);
       ctx.save();
       ctx.globalAlpha = 0.05;
       ctx.fillStyle = '#ffd76e';
       ctx.beginPath();
-      ctx.ellipse(this.W / 2, this.H * 0.48, this.W * 0.42, this.H * 0.34, 0, 0, Math.PI * 2);
+      ctx.ellipse(this.W / 2, this.H * 0.48, spotRx, spotRy, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     },

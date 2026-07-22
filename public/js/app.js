@@ -50,6 +50,16 @@
     toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
   }
 
+  // 오토패스 안내: 놓치기 쉬우므로 일반 토스트보다 훨씬 크게 화면 정가운데에 띄운다.
+  let autoPassNoticeTimer = null;
+  function showAutoPassNotice(msg) {
+    const el = $('autopass-notice');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(autoPassNoticeTimer);
+    autoPassNoticeTimer = setTimeout(() => el.classList.remove('show'), 1200);
+  }
+
   function openPopup(id) { $(id).classList.remove('hidden'); }
   function closePopup(id) { $(id).classList.add('hidden'); }
   document.querySelectorAll('.popup-close').forEach((b) => {
@@ -459,7 +469,7 @@
     if (!myTurn || !gameState.table) return;
     if (!GameUI.playable || GameUI.playable.size > 0) return;
 
-    toast('낼 수 있는 패가 없어 자동으로 패스합니다');
+    showAutoPassNotice('낼 수 있는 패가 없어 자동으로 패스합니다');
     autoPassTimer = setTimeout(() => {
       const stillMyTurn = gameState && gameState.turnId === gameState.you && !gameState.finished;
       if (autoPassEnabled && stillMyTurn && gameState.table && GameUI.playable && GameUI.playable.size === 0) {
