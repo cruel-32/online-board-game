@@ -3,11 +3,11 @@ const { Game } = require('./game');
 const { chooseBotMove } = require('./bot');
 const store = require('./store');
 
-const DEFAULT_CHIPS = 50; // 최소 지급 칩. 방장이 50개 단위로 조절 가능
+const DEFAULT_CHIPS = 50; // 기본 지급 칩(최소값). 방장이 10개 단위로 늘릴 수 있음
 const BOT_NAMES = ['봇 알파', '봇 브라보', '봇 찰리', '봇 델타'];
 
 function normalizeChips(v) {
-  const n = Math.round(Number(v) / 50) * 50;
+  const n = Math.round(Number(v) / 10) * 10;
   return Number.isFinite(n) && n >= 50 ? n : DEFAULT_CHIPS;
 }
 

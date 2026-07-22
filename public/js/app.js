@@ -329,11 +329,11 @@
   $('select-max').addEventListener('change', () => send({ type: 'set_max', maxPlayers: +$('select-max').value }));
   $('btn-chips-minus').addEventListener('click', () => {
     const cur = currentRoom ? currentRoom.chipsPerPlayer : 50;
-    send({ type: 'set_chips', chips: Math.max(50, cur - 50) });
+    send({ type: 'set_chips', chips: Math.max(50, cur - 10) });
   });
   $('btn-chips-plus').addEventListener('click', () => {
     const cur = currentRoom ? currentRoom.chipsPerPlayer : 50;
-    send({ type: 'set_chips', chips: cur + 50 });
+    send({ type: 'set_chips', chips: cur + 10 });
   });
   $('btn-add-bot').addEventListener('click', () => send({ type: 'add_bot' }));
   $('btn-ready').addEventListener('click', () => {
