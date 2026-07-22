@@ -47,16 +47,6 @@ body {
 .btn.small { padding: 7px 12px; font-size: 12px; }
 .btn.tiny { padding: 4px 9px; font-size: 11px; }
 
-/* ---- 회전 안내 ---- */
-#rotate-overlay {
-  display: none; position: fixed; inset: 0; z-index: 1000;
-  background: #0e0d15; text-align: center;
-}
-.rotate-inner { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
-.rotate-icon { font-size: 52px; animation: rotatePhone 1.6s ease-in-out infinite; }
-@keyframes rotatePhone { 0%,20% { transform: rotate(0); } 60%,100% { transform: rotate(90deg); } }
-@media (orientation: portrait) { #rotate-overlay { display: block; } }
-
 /* ================= 로비 ================= */
 .lobby-wrap {
   height: 100%; display: flex; flex-direction: column;
@@ -142,8 +132,8 @@ input, select {
 .room-actions { display: flex; flex-direction: column; gap: 8px; }
 .room-actions .btn { width: 100%; }
 #btn-ready.on { background: linear-gradient(180deg, #3f7a4b, #2c5636); border-color: #7fc98e; }
-/* 초대 링크 복사·나가기 + 음성/마이크/채팅 위젯: 대기실 전체 너비를 쓰는 하단 한 줄 액션 바 */
-.room-footer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+/* 초대 링크 복사·나가기 + 음성/마이크/채팅 위젯: 대기실 전체 너비를 쓰는 상단 한 줄 액션 바(헤더 바로 아래) */
+.room-footer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .room-footer-actions .btn { flex: 1 1 auto; white-space: nowrap; }
 .room-footer-actions .widget-btn { flex: 0 0 auto; }
 
@@ -287,4 +277,17 @@ input, select {
   .room-footer-actions .btn { padding: 6px 8px; font-size: 11px; }
   input, select { padding: 7px 8px; font-size: 13px; }
   .chat-panel { width: 190px; max-height: 40vh; top: calc(max(6px, env(safe-area-inset-top)) + 28px); }
+}
+
+/* ================= 세로 모드 ================= */
+/* 로비·대기실은 좌우 2단 구성이라 좁은 세로 폭에서 잘리므로 위아래로 쌓는다.
+   게임 화면(캔버스)은 폭/높이를 실시간으로 읽어 그리므로 별도 대응이 필요 없다. */
+@media (orientation: portrait) {
+  .lobby-body { flex-direction: column; overflow-y: auto; }
+  .lobby-left, .lobby-right { width: 100%; overflow-y: visible; }
+  .lobby-right { flex: none; }
+
+  .room-body { flex-direction: column; overflow-y: auto; }
+  .room-controls { width: 100%; }
+  .room-seats { flex: none; overflow-y: visible; }
 }

@@ -9,13 +9,6 @@
 </head>
 <body>
 
-<div id="rotate-overlay">
-  <div class="rotate-inner">
-    <div class="rotate-icon">📱</div>
-    <p>가로 모드로 돌려주세요</p>
-  </div>
-</div>
-
 <!-- ================= 로비 ================= -->
 <section id="screen-lobby" class="screen">
   <div class="lobby-wrap">
@@ -67,6 +60,10 @@
     <header class="room-header">
       <h2 id="room-title">방 이름</h2>
     </header>
+    <div id="room-footer-actions" class="room-footer-actions panel">
+      <button id="btn-invite" class="btn small" title="초대 링크 복사">🔗 초대 링크 복사</button>
+      <button id="btn-leave" class="btn small danger">나가기</button>
+    </div>
     <div class="room-body">
       <div id="room-seats" class="room-seats"></div>
       <div class="room-controls panel">
@@ -95,10 +92,6 @@
         </div>
         <p class="muted small-text">3~5인 필요 · 부족한 인원은 봇으로 채울 수 있습니다</p>
       </div>
-    </div>
-    <div id="room-footer-actions" class="room-footer-actions panel">
-      <button id="btn-invite" class="btn small" title="초대 링크 복사">🔗 초대 링크 복사</button>
-      <button id="btn-leave" class="btn small danger">나가기</button>
     </div>
   </div>
 </section>
@@ -143,7 +136,7 @@
 
 <div id="toast"></div>
 
-<!-- ================= 음성채팅 / 채팅 (게임 화면: 우측 상단 고정 / 대기룸: 하단 액션 줄로 이동) ================= -->
+<!-- ================= 음성채팅 / 채팅 (게임 화면: 우측 상단 고정 / 대기룸: 상단 액션 줄로 이동) ================= -->
 <span id="side-widgets-home"></span>
 <div id="side-widgets" class="side-widgets hidden">
   <button id="btn-voice-toggle" class="btn tiny widget-btn" title="음성채팅 켜기/끄기">🔇 음성</button>

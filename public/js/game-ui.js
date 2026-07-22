@@ -143,25 +143,74 @@
       this.chatBubbles.set(id, { text, until: performance.now() + 5000 });
     },
 
-    /* ---------- 레이아웃 ---------- */
+    /* ---------- 레이아웃 ----------
+     * 손패가 7장을 넘어가면 두 줄로 나눠 가로 폭을 줄인다 (예: 13장 → 앞줄 7장 + 뒷줄 6장).
+     * 세로 모드처럼 가용 폭이 좁을 때는 타일 크기 자체도 줄여 화면 밖으로 잘리지 않게 한다.
+     */
     handLayout() {
       const n = this.handOrder.length;
       const H = this.H, W = this.W;
-      const tw = H < 380 ? 38 : 44; // 손패 칸 크기를 줄여 위쪽 정보 영역과의 겹침을 방지
-      const th = Math.round(tw * 1.38);
+      const twoRows = n > 7;
+      const c0 = twoRows ? Math.ceil(n / 2) : n;   // 앞줄(화면 하단, 더 많은 쪽) 개수
+      const c1 = twoRows ? n - c0 : 0;              // 뒷줄(앞줄 위쪽) 개수
+      const maxCount = Math.max(c0, c1, 1);
       const availW = W - 150; // 오른쪽 HUD 버튼 영역 제외
-      const spacing = n > 1 ? Math.min(tw + 5, (availW - tw) / (n - 1)) : 0;
-      const totalW = tw + spacing * (n - 1);
-      const x0 = (W - 70 - totalW) / 2 + 0; // 살짝 좌측 중심
-      const y = H - th - 10;
-      return { n, tw, th, spacing, x0, y };
+
+      let tw = H < 380 ? 38 : 44; // 손패 칸 크기를 줄여 위쪽 정보 영역과의 겹침을 방지
+      if (maxCount > 1) {
+        const neededW = tw + (tw + 5) * (maxCount - 1);
+        if (neededW > availW) {
+          tw = Math.max(22, Math.floor((availW - 5 * (maxCount - 1)) / maxCount));
+        }
+      } else if (tw > availW) {
+        tw = Math.max(22, availW);
+      }
+      const th = Math.round(tw * 1.38);
+      const spacing = maxCount > 1 ? Math.min(tw + 5, (availW - tw) / (maxCount - 1)) : 0;
+      const rowGap = 8;
+
+      const xFor = (count) => {
+        const totalW = tw + spacing * (Math.max(count, 1) - 1);
+        return (W - 70 - totalW) / 2;
+      };
+      const y0 = H - th - 10;                       // 앞줄(화면 하단)
+      const y1 = twoRows ? y0 - th - rowGap : y0;    // 뒷줄(앞줄 위쪽)
+
+      return { n, tw, th, spacing, twoRows, c0, c1, x0: xFor(c0), x1: xFor(c1), y0, y1 };
+    },
+
+    // 손패 인덱스가 앞줄(0)인지 뒷줄(1)인지 판정
+    rowOfIndex(i, L) {
+      L = L || this.handLayout();
+      return (L.twoRows && i >= L.c0) ? 1 : 0;
     },
 
     tileRectAt(i) {
       const L = this.handLayout();
       const id = this.handOrder[i];
       const sel = this.selected.has(id);
-      return { x: L.x0 + i * L.spacing, y: L.y - (sel ? 14 : 0), w: L.tw, h: L.th };
+      const row = this.rowOfIndex(i, L);
+      const col = row === 0 ? i : i - L.c0;
+      const x = (row === 0 ? L.x0 : L.x1) + col * L.spacing;
+      const y = (row === 0 ? L.y0 : L.y1) - (sel ? 14 : 0);
+      return { x, y, w: L.tw, h: L.th };
+    },
+
+    // 드래그 중 포인터 좌표 → 삽입될 손패 인덱스(두 줄 배치 대응)
+    posToIndex(px, py) {
+      const L = this.handLayout();
+      if (!L.twoRows) {
+        const ins = Math.round((px - L.x0) / (L.spacing || 1));
+        return Math.max(0, Math.min(L.n - 1, ins));
+      }
+      const d0 = Math.abs(py - (L.y0 + L.th / 2));
+      const d1 = Math.abs(py - (L.y1 + L.th / 2));
+      if (d0 <= d1) {
+        const ins = Math.round((px - L.x0) / (L.spacing || 1));
+        return Math.max(0, Math.min(L.c0 - 1, ins));
+      }
+      const ins = Math.round((px - L.x1) / (L.spacing || 1));
+      return L.c0 + Math.max(0, Math.min(L.c1 - 1, ins));
     },
 
     seatPositions() {
@@ -432,8 +481,9 @@
       if (!me) return;
       const L = this.handLayout();
       const x = 10;
-      // 손패 바로 위에 두 줄로 압축 배치 (겹침 방지): 아래 줄=이름/칩/선, 위 줄=차례·패스 표시
-      const rowY = L.y - 10;
+      // 손패(맨 위 줄) 바로 위에 두 줄로 압축 배치 (겹침 방지): 아래 줄=이름/칩/선, 위 줄=차례·패스 표시
+      const handTopY = L.twoRows ? L.y1 : L.y0;
+      const rowY = handTopY - 10;
       const topY = rowY - 16;
       const isTurn = this.isMyTurn();
 
@@ -477,39 +527,48 @@
     drawHand(ctx) {
       const L = this.handLayout();
       const dragging = this.pointer && this.pointer.dragging;
+      const fromIdx = dragging ? this.pointer.tileIdx : -1;
+      const toIdx = dragging ? this.dragInsert : -1;
+      const fromRow = dragging ? this.rowOfIndex(fromIdx, L) : -1;
+      const toRow = dragging && toIdx >= 0 ? this.rowOfIndex(toIdx, L) : -1;
+      const sameRowDrag = dragging && toIdx >= 0 && fromRow === toRow;
+
       for (let i = 0; i < this.handOrder.length; i++) {
-        if (dragging && i === this.pointer.tileIdx) continue; // 드래그 중인 타일은 마지막에
-        let x = L.x0 + i * L.spacing;
-        // 드래그 삽입 위치 표시: 자리 이동
-        if (dragging && this.dragInsert >= 0) {
-          const from = this.pointer.tileIdx;
-          const to = this.dragInsert;
-          let vi = i;
-          if (from < to && i > from && i <= to) vi = i - 1;
-          else if (from > to && i >= to && i < from) vi = i + 1;
-          x = L.x0 + vi * L.spacing;
+        if (dragging && i === fromIdx) continue; // 드래그 중인 타일은 마지막에
+        const row = this.rowOfIndex(i, L);
+        let col = row === 0 ? i : i - L.c0;
+        // 드래그 삽입 위치 표시: 같은 줄 안에서만 자리 이동 애니메이션
+        if (sameRowDrag && row === fromRow) {
+          const from = row === 0 ? fromIdx : fromIdx - L.c0;
+          const to = row === 0 ? toIdx : toIdx - L.c0;
+          if (from < to && col > from && col <= to) col -= 1;
+          else if (from > to && col >= to && col < from) col += 1;
         }
+        const x = (row === 0 ? L.x0 : L.x1) + col * L.spacing;
+        const y = row === 0 ? L.y0 : L.y1;
         const id = this.handOrder[i];
         const t = this.tileById(id);
         if (!t) continue;
         const sel = this.selected.has(id);
         const dim = this.playable ? !this.playable.has(id) : false;
-        this.draw3DTile(ctx, x, L.y - (sel ? 14 : 0), L.tw, L.th, t, { selected: sel, dimmed: dim });
+        this.draw3DTile(ctx, x, y - (sel ? 14 : 0), L.tw, L.th, t, { selected: sel, dimmed: dim });
       }
       // 드래그 삽입 슬롯 하이라이트
-      if (dragging && this.dragInsert >= 0) {
-        const x = L.x0 + this.dragInsert * L.spacing;
+      if (dragging && toIdx >= 0) {
+        const col = toRow === 0 ? toIdx : toIdx - L.c0;
+        const x = (toRow === 0 ? L.x0 : L.x1) + col * L.spacing;
+        const y = toRow === 0 ? L.y0 : L.y1;
         ctx.save();
         ctx.strokeStyle = '#ffd76e';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 4]);
-        this.roundRect(ctx, x - 2, L.y - 4, L.tw + 4, L.th + 8, 8);
+        this.roundRect(ctx, x - 2, y - 4, L.tw + 4, L.th + 8, 8);
         ctx.stroke();
         ctx.restore();
       }
       // 드래그 중인 타일을 포인터 위치에 확대+글로우로
       if (dragging) {
-        const id = this.handOrder[this.pointer.tileIdx];
+        const id = this.handOrder[fromIdx];
         const t = this.tileById(id);
         if (t) {
           const w = L.tw * 1.12, h = L.th * 1.12;
@@ -670,9 +729,7 @@
         }
       }
       if (this.pointer.dragging) {
-        const L = this.handLayout();
-        let ins = Math.round((p.x - L.x0) / (L.spacing || 1));
-        this.dragInsert = Math.max(0, Math.min(this.handOrder.length - 1, ins));
+        this.dragInsert = this.posToIndex(p.x, p.y);
       }
     },
 
