@@ -197,6 +197,11 @@ input, select {
 .mini-tile.moon { color: #52d273; }
 .mini-tile.star { color: #ffd23e; }
 .mini-tile.cloud { color: #4db3ff; }
+.mini-tile-top {
+  background: linear-gradient(160deg, #3d2a10, #120a02);
+  border: 1.4px solid #ffcf4a;
+  box-shadow: 0 0 6px rgba(255, 207, 74, 0.55);
+}
 .assist-empty { color: #9a93a8; font-size: 13px; padding: 8px 0; }
 
 /* 결과 테이블 */
@@ -208,6 +213,48 @@ input, select {
 .result-table .delta-minus { color: #ff8f8f; }
 .result-busted { margin-top: 10px; color: #ff8f8f; font-size: 13px; text-align: center; }
 .result-champion { margin-top: 8px; text-align: center; font-size: 15px; color: #ffd76e; }
+
+/* ================= 음성채팅 / 채팅 위젯 ================= */
+.side-widgets {
+  position: fixed;
+  top: calc(max(8px, env(safe-area-inset-top)) + 42px);
+  right: max(6px, env(safe-area-inset-right));
+  z-index: 55;
+  display: flex; gap: 6px;
+}
+.side-widgets.hidden { display: none; }
+.widget-btn { padding: 6px 9px; font-size: 12px; position: relative; }
+.widget-btn.on { background: linear-gradient(180deg, #3f7a4b, #2c5636); border-color: #7fc98e; }
+.widget-btn.muted { background: linear-gradient(180deg, #7a3040, #55202c); border-color: #c76; }
+.chat-badge {
+  position: absolute; top: -4px; right: -4px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #ff5b5b; border: 1px solid rgba(0,0,0,0.4);
+}
+.chat-badge.hidden { display: none; }
+
+.chat-panel {
+  position: fixed;
+  top: calc(max(8px, env(safe-area-inset-top)) + 78px);
+  right: max(6px, env(safe-area-inset-right));
+  z-index: 54;
+  width: 230px;
+  max-height: min(46vh, 190px);
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.chat-panel.hidden { display: none; }
+.chat-header { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #f0c25a; font-weight: 700; }
+.chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; min-height: 60px; }
+.chat-msg { font-size: 12px; line-height: 1.35; }
+.chat-msg .cname { color: #ffd76e; font-weight: 700; margin-right: 4px; }
+.chat-msg.sys { color: #9a93a8; font-style: italic; }
+.chat-input-row { display: flex; gap: 6px; }
+.chat-input-row input { padding: 7px 8px; font-size: 12px; }
+.chat-input-row .btn { padding: 6px 10px; font-size: 12px; }
+
+.mic-tag { background: #2c5636; color: #bef0c6; }
+.mic-tag.muted { background: #6b3535; color: #ffc9c9; }
 
 /* 토스트 */
 #toast {
@@ -227,4 +274,6 @@ input, select {
   .hud-btn { width: 52px; padding: 6px 3px; font-size: 11px; }
   .room-controls { width: 190px; }
   input, select { padding: 7px 8px; font-size: 13px; }
+  .side-widgets { top: calc(max(6px, env(safe-area-inset-top)) + 36px); }
+  .chat-panel { top: calc(max(6px, env(safe-area-inset-top)) + 66px); width: 190px; max-height: 40vh; }
 }

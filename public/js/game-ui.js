@@ -23,6 +23,7 @@
     anim: 0,
     callbacks: {},
     lastEvent: null, // {text, until}
+    chatReserve: 0, // 우측 상단 채팅 패널이 열려 있을 때 비워둘 폭(px)
 
     init(canvas, callbacks) {
       this.canvas = canvas;
@@ -158,6 +159,20 @@
       return { x: L.x0 + i * L.spacing, y: L.y - (sel ? 14 : 0), w: L.tw, h: L.th };
     },
 
+    setChatReserve(px) {
+      this.chatReserve = px || 0;
+    },
+
+    // 채팅 패널이 열려 있으면 그 폭만큼 테이블 중심을 왼쪽으로 옮기고, 패널과 겹치지 않도록 반경을 줄인다.
+    tableCenter(baseRx) {
+      const reserve = this.chatReserve;
+      if (!reserve) return { cx: this.W / 2, rx: baseRx };
+      const cx = (this.W - reserve) / 2;
+      const panelLeft = this.W - reserve;
+      const rx = Math.max(80, Math.min(baseRx, panelLeft - cx));
+      return { cx, rx };
+    },
+
     seatPositions() {
       // 상대 좌석: 내 다음 차례부터 시계 방향(왼쪽→위→오른쪽)
       const st = this.state;
@@ -167,8 +182,9 @@
         others.push(st.players[(myIdx + k) % st.players.length]);
       }
       const n = others.length;
-      const cx = this.W / 2, cy = this.H * 0.47;
-      const rx = Math.min(this.W * 0.40, 330), ry = this.H * 0.30;
+      const cy = this.H * 0.47;
+      const { cx, rx } = this.tableCenter(Math.min(this.W * 0.40, 330));
+      const ry = this.H * 0.30;
       // 왼쪽(180°)에서 오른쪽(0°)으로 균등 배치 → 턴 진행 방향이 왼쪽→오른쪽
       return others.map((p, i) => {
         const a = Math.PI * (1 - (i + 1) / (n + 1));
@@ -206,8 +222,9 @@
     },
 
     drawTable(ctx) {
-      const cx = this.W / 2, cy = this.H * 0.47;
-      const rx = Math.min(this.W * 0.34, 300), ry = this.H * 0.27;
+      const cy = this.H * 0.47;
+      const { cx, rx } = this.tableCenter(Math.min(this.W * 0.34, 300));
+      const ry = this.H * 0.27;
       // 테이블 두께(입체감): 아래쪽 어두운 타원
       ctx.fillStyle = '#1c1206';
       ctx.beginPath();
@@ -239,7 +256,8 @@
 
     drawCenter(ctx) {
       const st = this.state;
-      const cx = this.W / 2, cy = this.H * 0.47;
+      const cy = this.H * 0.47;
+      const { cx } = this.tableCenter(Math.min(this.W * 0.34, 300));
       if (st.table) {
         const tiles = st.table.tiles;
         const tw = this.H < 380 ? 34 : 40, th = Math.round(tw * 1.38);
@@ -251,18 +269,22 @@
           this.draw3DTile(ctx, x, y, tw, th, t, {});
           x += overlap;
         }
-        // 누가 낸 패인지 + 조합명
-        const label = `${st.table.byName} · ${core.TYPE_LABEL[st.table.combo.type]}`;
-        ctx.font = '700 13px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#ffe9b0';
-        const tx = cx, ty = y - 12;
-        const w = ctx.measureText(label).width + 20;
-        ctx.fillStyle = 'rgba(0,0,0,0.5)';
-        this.roundRect(ctx, tx - w / 2, ty - 14, w, 20, 10);
-        ctx.fill();
-        ctx.fillStyle = '#ffe9b0';
-        ctx.fillText(label, tx, ty);
+        if (st.finished) {
+          this.drawFinishBanner(ctx, cx, y);
+        } else {
+          // 누가 낸 패인지 + 조합명
+          const label = `${st.table.byName} · ${core.TYPE_LABEL[st.table.combo.type]}`;
+          ctx.font = '700 13px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#ffe9b0';
+          const tx = cx, ty = y - 12;
+          const w = ctx.measureText(label).width + 20;
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          this.roundRect(ctx, tx - w / 2, ty - 14, w, 20, 10);
+          ctx.fill();
+          ctx.fillStyle = '#ffe9b0';
+          ctx.fillText(label, tx, ty);
+        }
       } else {
         ctx.font = '700 14px sans-serif';
         ctx.textAlign = 'center';
@@ -274,6 +296,27 @@
           : `${leader ? leader.name : ''} 님이 선입니다`;
         ctx.fillText(text, cx, cy + 4);
       }
+    },
+
+    // 라운드 종료: 마지막 패를 낸 사람을 잠시 크게 알려준다(결과 팝업이 뜨기 전 텀).
+    drawFinishBanner(ctx, cx, tileY) {
+      const st = this.state;
+      const name = (st.table && st.table.byName) || '';
+      const pulse = 0.65 + 0.35 * Math.sin(this.anim / 220);
+      const label = `🎉 ${name}님이 모든 패를 냈습니다!`;
+      ctx.font = '800 15px sans-serif';
+      ctx.textAlign = 'center';
+      const ty = tileY - 16;
+      const w = ctx.measureText(label).width + 28;
+      ctx.save();
+      ctx.shadowColor = '#ffd76e';
+      ctx.shadowBlur = 14 * pulse;
+      ctx.fillStyle = 'rgba(30, 20, 5, 0.78)';
+      this.roundRect(ctx, cx - w / 2, ty - 17, w, 25, 13);
+      ctx.fill();
+      ctx.restore();
+      ctx.fillStyle = `rgba(255, 231, 176, ${pulse})`;
+      ctx.fillText(label, cx, ty);
     },
 
     drawSeats(ctx) {
@@ -310,6 +353,16 @@
         ctx.fillStyle = '#ece7dc';
         ctx.fillText(p.isBot ? '🤖' : p.name.slice(0, 1), x, y - 3);
 
+        // 음성채팅 참여 표시
+        if (p.inVoice) {
+          ctx.fillStyle = p.micMuted ? 'rgba(107, 53, 53, 0.95)' : 'rgba(44, 86, 54, 0.95)';
+          ctx.beginPath();
+          ctx.arc(x - 15, y - 22, 8, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.font = '9px sans-serif';
+          ctx.fillText(p.micMuted ? '🔕' : '🎙️', x - 15, y - 19);
+        }
+
         // 선 배지
         if (isLeader) {
           ctx.fillStyle = '#c98a2e';
@@ -324,14 +377,17 @@
         ctx.font = '600 11px sans-serif';
         ctx.fillStyle = isTurn ? '#ffe9b0' : '#c9c2d6';
         ctx.fillText(p.name.slice(0, 8), x, y + 24);
-        // 남은 타일 수 (미니 타일 아이콘)
+        // 남은 타일 수 (렉시오 타일 뒷면 아이콘)
         const badgeY = y + 32;
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
         this.roundRect(ctx, x - 34, badgeY, 68, 16, 8);
         ctx.fill();
+        this.drawTileBackIcon(ctx, x - 31, badgeY + 2, 9, 12);
         ctx.font = '700 10px sans-serif';
         ctx.fillStyle = '#9fe8ff';
-        ctx.fillText(`🀄 ${p.tileCount}`, x - 15, badgeY + 12);
+        ctx.textAlign = 'left';
+        ctx.fillText(`×${p.tileCount}`, x - 19, badgeY + 12);
+        ctx.textAlign = 'center';
         ctx.fillStyle = '#ffd76e';
         ctx.fillText(`● ${p.chips}`, x + 16, badgeY + 12);
         // PASS 표시
@@ -442,10 +498,14 @@
 
     draw3DTile(ctx, x, y, w, h, tile, opts) {
       opts = opts || {};
+      const isTop = tile.num === 2; // 렉시오 최고 패 — 화려하게 강조
       ctx.save();
       if (opts.glow) {
         ctx.shadowColor = '#ffd76e';
         ctx.shadowBlur = 16;
+      } else if (isTop) {
+        ctx.shadowColor = '#ffcf4a';
+        ctx.shadowBlur = 9;
       }
       // 입체 옆면 (아래+오른쪽)
       ctx.fillStyle = '#060509';
@@ -453,24 +513,60 @@
       ctx.fill();
       // 본체
       const body = ctx.createLinearGradient(x, y, x, y + h);
-      body.addColorStop(0, '#232030');
-      body.addColorStop(1, '#131019');
+      if (isTop) {
+        body.addColorStop(0, '#3d2a10');
+        body.addColorStop(0.5, '#241606');
+        body.addColorStop(1, '#120a02');
+      } else {
+        body.addColorStop(0, '#232030');
+        body.addColorStop(1, '#131019');
+      }
       ctx.fillStyle = body;
       this.roundRect(ctx, x, y, w, h, 6);
       ctx.fill();
-      // 윗면 하이라이트
-      ctx.strokeStyle = opts.selected ? '#ffd76e' : 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = opts.selected ? 2 : 1;
+      ctx.shadowBlur = 0;
+
+      if (isTop) {
+        // 대각선으로 흐르는 반짝임
+        ctx.save();
+        this.roundRect(ctx, x, y, w, h, 6);
+        ctx.clip();
+        const phase = (this.anim / 900) % 1;
+        const sx = x - w + phase * (w * 3);
+        const shine = ctx.createLinearGradient(sx, y, sx + w * 0.7, y + h);
+        shine.addColorStop(0, 'rgba(255,255,255,0)');
+        shine.addColorStop(0.5, 'rgba(255,255,255,0.3)');
+        shine.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = shine;
+        ctx.fillRect(x, y, w, h);
+        ctx.restore();
+        // 이중 금테(안쪽)
+        ctx.strokeStyle = '#ffe9a8';
+        ctx.lineWidth = 1.6;
+        this.roundRect(ctx, x + 1.8, y + 1.8, w - 3.6, h - 3.6, 5);
+        ctx.stroke();
+      }
+
+      // 윗면 테두리
+      ctx.strokeStyle = opts.selected ? '#ffd76e' : (isTop ? '#ffcf4a' : 'rgba(255,255,255,0.18)');
+      ctx.lineWidth = opts.selected ? 2 : (isTop ? 1.5 : 1);
       this.roundRect(ctx, x, y, w, h, 6);
       ctx.stroke();
+
       // 숫자/무늬
       const color = SUIT_COLOR[tile.suit];
       ctx.textAlign = 'center';
+      if (isTop) {
+        ctx.shadowColor = 'rgba(255, 210, 100, 0.9)';
+        ctx.shadowBlur = 5;
+      }
       ctx.fillStyle = color;
       ctx.font = `800 ${Math.round(h * 0.34)}px sans-serif`;
       ctx.fillText(String(tile.num), x + w / 2, y + h * 0.45);
       ctx.font = `${Math.round(h * 0.26)}px sans-serif`;
       ctx.fillText(core.SUIT_SYMBOL[tile.suit], x + w / 2, y + h * 0.82);
+      ctx.shadowBlur = 0;
+
       // 낼 수 없는 패는 어둡게
       if (opts.dimmed) {
         ctx.fillStyle = 'rgba(5, 5, 10, 0.62)';
@@ -478,6 +574,28 @@
         ctx.fill();
       }
       ctx.restore();
+    },
+
+    // 남은 타일 수 배지용 — 렉시오 타일 뒷면을 축소한 아이콘(마작패 이모지 대체)
+    drawTileBackIcon(ctx, x, y, w, h) {
+      const body = ctx.createLinearGradient(x, y, x, y + h);
+      body.addColorStop(0, '#2c2740');
+      body.addColorStop(1, '#171325');
+      ctx.fillStyle = body;
+      this.roundRect(ctx, x, y, w, h, 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 215, 130, 0.55)';
+      ctx.lineWidth = 0.8;
+      this.roundRect(ctx, x, y, w, h, 2);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255, 215, 130, 0.75)';
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, y + h * 0.2);
+      ctx.lineTo(x + w * 0.8, y + h / 2);
+      ctx.lineTo(x + w / 2, y + h * 0.8);
+      ctx.lineTo(x + w * 0.2, y + h / 2);
+      ctx.closePath();
+      ctx.fill();
     },
 
     roundRect(ctx, x, y, w, h, r) {

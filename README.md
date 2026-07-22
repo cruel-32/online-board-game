@@ -36,16 +36,23 @@ Redis/PostgreSQL 없이도 동작합니다. (`REDIS_URL`, `DATABASE_URL` 환경�
 - **게임 UI**: 카지노풍 원형 테이블, 입체(3D) 타일, 선/차례 표시, 마지막 낸 패와 낸 사람 표시,
   손패 오름차순 자동 정렬 + 드래그 수동 정렬(액티브 효과), 낼 수 있는 패/없는 패 구분 표시
 - **어시스트**: 버튼을 누르면 내 손패로 만들 수 있는 모든 조합을 팝업으로 표시, 누르면 자동 선택
+- **효과음**: 패 내기(마작패 부딪히는 소리)·타일 선택/해제·입장/퇴장은 합성음, 패스는 음성("패스") 안내
+- **채팅 / 음성채팅**: 대기실·게임 화면 우측 상단 위젯(게임 UI를 가리지 않도록 배치, 채팅창을 열면 테이블이 자동으로 살짝 왼쪽으로 비켜남).
+  텍스트 채팅은 서버 중계, 음성채팅은 참가자끼리 WebRTC로 직접 연결(P2P mesh)하며 서버는 시그널링만 중계.
+  마이크 켜기/끄기, 음성채팅 참여/음소거 상태를 대기실 좌석과 게임 화면에 표시.
+  ⚠️ 마이크 접근은 브라우저 보안 정책상 HTTPS(또는 localhost) 접속에서만 동작합니다 — 홈서버에 도메인+TLS(리버스 프록시)를 붙여야 폰에서 사용 가능
 
 ## 구조
 
 ```
 public/shared/lexio-core.js   룰 엔진 (서버·클라이언트 공용)
 server/src/index.js           HTTP + WebSocket 서버
-server/src/rooms.js           방/접속/메시지 라우팅
+server/src/rooms.js           방/접속/메시지 라우팅 + 채팅·음성 시그널링 중계
 server/src/game.js            라운드 상태 머신
 server/src/bot.js             봇 AI
 server/src/store.js           Redis / PostgreSQL 영속화 (선택)
-public/js/app.js              로비·대기실·HUD·팝업
+public/js/app.js              로비·대기실·HUD·팝업·채팅
 public/js/game-ui.js          Canvas 게임 렌더러 + 터치 입력
+public/js/voice.js            WebRTC 음성채팅(P2P mesh) 클라이언트
+public/js/sound.js            효과음(합성 사운드 + 음성 안내)
 ```

@@ -143,8 +143,27 @@
 
 <div id="toast"></div>
 
+<!-- ================= 음성채팅 / 채팅 (방·게임 화면 공통, 우측 상단 고정) ================= -->
+<div id="side-widgets" class="side-widgets hidden">
+  <button id="btn-voice-toggle" class="btn tiny widget-btn" title="음성채팅 켜기/끄기">🔇 음성</button>
+  <button id="btn-mic-toggle" class="btn tiny widget-btn" title="마이크 켜기/끄기" disabled>🎙️</button>
+  <button id="btn-chat-toggle" class="btn tiny widget-btn" title="채팅">💬<span id="chat-badge" class="chat-badge hidden"></span></button>
+</div>
+<div id="chat-panel" class="panel chat-panel hidden">
+  <header class="chat-header">
+    <span>채팅</span>
+    <button class="popup-close" id="btn-chat-close">✕</button>
+  </header>
+  <div id="chat-messages" class="chat-messages"></div>
+  <div class="chat-input-row">
+    <input id="chat-input" maxlength="200" placeholder="메시지 입력">
+    <button id="btn-chat-send" class="btn tiny">전송</button>
+  </div>
+</div>
+
 <script src="shared/lexio-core.js"></script>
 <script src="js/sound.js"></script>
+<script src="js/voice.js"></script>
 <script src="js/game-ui.js"></script>
 <script src="js/app.js"></script>
 </body>

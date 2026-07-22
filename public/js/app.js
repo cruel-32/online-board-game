@@ -114,6 +114,8 @@
         currentRoom = msg.room;
         playRoomDiffSounds(prevRoom, msg.room);
         renderRoom(msg.room);
+        updateSideWidgets();
+        VoiceChat.handleRoster(msg.room.players.filter((p) => p.inVoice).map((p) => p.id));
         if (msg.room.state !== 'playing') {
           // 게임 화면에서 결과 팝업을 보는 중이면 화면 유지
           if (!$('screen-game').classList.contains('active') || $('result-popup').classList.contains('hidden')) {
@@ -133,6 +135,9 @@
         gameState = null;
         showScreen('lobby');
         if (Sound) Sound.leave();
+        VoiceChat.reset();
+        clearChat();
+        updateSideWidgets();
         break;
       case 'kicked':
         currentRoom = null;
@@ -140,6 +145,9 @@
         toast('방에서 강퇴되었습니다.');
         showScreen('lobby');
         if (Sound) Sound.leave();
+        VoiceChat.reset();
+        clearChat();
+        updateSideWidgets();
         break;
       case 'need_password': {
         const pw = prompt(msg.wrong ? '비밀번호가 틀렸습니다. 다시 입력하세요.' : '방 비밀번호를 입력하세요.');
@@ -156,10 +164,18 @@
         $('game-room-name').textContent = `${msg.state.roomName} · ${msg.state.roundNo}라운드`;
         GameUI.setState(msg.state);
         updateHudButtons();
+        updateSideWidgets();
+        VoiceChat.handleRoster(msg.state.players.filter((p) => p.inVoice).map((p) => p.id));
         break;
       }
       case 'round_over':
         showResult(msg.result);
+        break;
+      case 'chat':
+        addChatMessage(msg);
+        break;
+      case 'voice_signal':
+        VoiceChat.handleSignal(msg.from, msg.data);
         break;
       case 'error':
         toast(msg.message);
@@ -252,6 +268,7 @@
         if (p.isBot) tags.push('<span class="tag bot">봇</span>');
         if (p.ready && p.id !== room.hostId) tags.push('<span class="tag ready">준비완료</span>');
         if (!p.isBot && !p.connected) tags.push('<span class="tag off">접속끊김</span>');
+        if (p.inVoice) tags.push(`<span class="tag mic-tag${p.micMuted ? ' muted' : ''}">${p.micMuted ? '🔕 음소거' : '🎙️ 음성중'}</span>`);
         tags.push(`<span class="tag">● ${p.chips}점</span>`);
         div.innerHTML = `<div class="sname">${escapeHtml(p.name)}</div><div class="stags">${tags.join('')}</div>`;
         if (isHost && p.id !== room.you) {
@@ -311,6 +328,94 @@
   });
   $('btn-start').addEventListener('click', () => send({ type: 'start' }));
 
+  /* ---------- 음성채팅 / 채팅 위젯 (방·게임 화면 공통) ---------- */
+  function updateSideWidgets() {
+    const inRoom = !!currentRoom;
+    $('side-widgets').classList.toggle('hidden', !inRoom);
+    if (!inRoom) {
+      $('chat-panel').classList.add('hidden');
+      updateChatReserve();
+    }
+    refreshVoiceButtons();
+  }
+
+  // 채팅 패널이 열려 있으면 그 폭만큼 게임 캔버스(테이블)에 여유 공간을 요청해 겹치지 않게 한다.
+  function updateChatReserve() {
+    const panel = $('chat-panel');
+    if (panel.classList.contains('hidden')) {
+      GameUI.setChatReserve(0);
+      return;
+    }
+    const rect = panel.getBoundingClientRect();
+    GameUI.setChatReserve(Math.ceil(rect.width + 30));
+  }
+
+  function refreshVoiceButtons() {
+    const voiceBtn = $('btn-voice-toggle');
+    const micBtn = $('btn-mic-toggle');
+    voiceBtn.textContent = VoiceChat.enabled ? '🔊 음성' : '🔇 음성';
+    voiceBtn.classList.toggle('on', VoiceChat.enabled);
+    micBtn.disabled = !VoiceChat.enabled;
+    micBtn.textContent = VoiceChat.muted ? '🔕' : '🎙️';
+    micBtn.classList.toggle('muted', VoiceChat.muted);
+  }
+
+  VoiceChat.init({
+    myId: clientId,
+    send,
+    onStateChange: refreshVoiceButtons,
+    onError: (m) => toast(m),
+  });
+
+  $('btn-voice-toggle').addEventListener('click', async () => {
+    if (VoiceChat.enabled) VoiceChat.disable();
+    else await VoiceChat.enable();
+  });
+  $('btn-mic-toggle').addEventListener('click', () => VoiceChat.setMuted(!VoiceChat.muted));
+
+  $('btn-chat-toggle').addEventListener('click', () => {
+    const panel = $('chat-panel');
+    panel.classList.toggle('hidden');
+    if (!panel.classList.contains('hidden')) {
+      $('chat-badge').classList.add('hidden');
+      $('chat-input').focus();
+    }
+    updateChatReserve();
+  });
+  $('btn-chat-close').addEventListener('click', () => {
+    $('chat-panel').classList.add('hidden');
+    updateChatReserve();
+  });
+
+  function clearChat() {
+    $('chat-messages').innerHTML = '';
+    $('chat-badge').classList.add('hidden');
+  }
+
+  function addChatMessage(msg) {
+    const list = $('chat-messages');
+    const row = document.createElement('div');
+    row.className = 'chat-msg';
+    row.innerHTML = `<span class="cname">${escapeHtml(msg.name)}</span>${escapeHtml(msg.text)}`;
+    list.appendChild(row);
+    list.scrollTop = list.scrollHeight;
+    if ($('chat-panel').classList.contains('hidden')) {
+      $('chat-badge').classList.remove('hidden');
+    }
+  }
+
+  function sendChat() {
+    const input = $('chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+    send({ type: 'chat', text });
+    input.value = '';
+  }
+  $('btn-chat-send').addEventListener('click', sendChat);
+  $('chat-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') sendChat();
+  });
+
   /* ---------- 게임 HUD ---------- */
   function updateHudButtons() {
     if (!gameState) return;
@@ -336,7 +441,8 @@
 
   /* ---------- 어시스트 팝업 ---------- */
   function miniTileHtml(t) {
-    return `<span class="mini-tile ${t.suit}">${t.num}<small>${core.SUIT_SYMBOL[t.suit]}</small></span>`;
+    const top = t.num === 2 ? ' mini-tile-top' : '';
+    return `<span class="mini-tile ${t.suit}${top}">${t.num}<small>${core.SUIT_SYMBOL[t.suit]}</small></span>`;
   }
 
   function renderAssist() {

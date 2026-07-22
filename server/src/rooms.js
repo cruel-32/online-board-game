@@ -70,6 +70,7 @@ function serializeRoom(room, viewerId) {
       players: room.players.map((p) => ({
         id: p.id, name: p.name, isBot: p.isBot,
         ready: p.ready, connected: p.connected, chips: p.chips,
+        inVoice: !!p.inVoice, micMuted: !!p.micMuted,
       })),
       lastResult: room.lastResult || null,
       matchOver: !!room.matchOver,
@@ -102,6 +103,7 @@ function serializeGame(room, viewerId) {
         connected: p.connected, chips: p.chips,
         tileCount: g.hands.get(p.id).length,
         passed: g.passed.has(p.id),
+        inVoice: !!p.inVoice, micMuted: !!p.micMuted,
       })),
       turnId: g.currentPlayerId(),
       leaderId: g.leaderId,
@@ -115,6 +117,7 @@ function serializeGame(room, viewerId) {
         : null,
       hand: g.hands.get(viewerId) || [],
       finished: g.finished,
+      winnerId: g.winnerId,
     },
   };
 }
@@ -123,6 +126,12 @@ function broadcastGame(room) {
   for (const p of room.players) {
     if (!p.isBot) sendTo(p.id, serializeGame(room, p.id));
   }
+}
+
+// 음성채팅/마이크 상태처럼 방 상태에 얹혀가는 정보가 바뀌었을 때, 현재 화면(대기실/게임)에 맞는 브로드캐스트를 보낸다.
+function broadcastPresence(room) {
+  if (room.state === 'playing' && room.game) broadcastGame(room);
+  else broadcastRoom(room);
 }
 
 /* ---------------- 방 관리 ---------------- */
@@ -143,6 +152,7 @@ function createRoom(client, { name, password, maxPlayers, chips }) {
     matchOver: false,
     botTimer: null,
     emptyTimer: null,
+    settleTimer: null,
   };
   rooms.set(room.id, room);
   joinRoomInternal(room, client);
@@ -179,6 +189,8 @@ function leaveRoom(clientId) {
     const p = room.players[idx];
     p.isBot = true;
     p.connected = false;
+    p.inVoice = false;
+    p.micMuted = false;
     p.name = p.name + '(봇)';
     p.ready = true;
     reassignHost(room);
@@ -206,6 +218,7 @@ function checkRoomEmpty(room, immediate) {
   const activeHumans = room.players.filter((p) => !p.isBot && p.connected);
   if (activeHumans.length > 0) return;
   clearTimeout(room.botTimer); // 지켜보는 실제 플레이어가 없으면 봇끼리 진행하지 않는다.
+  clearTimeout(room.settleTimer);
 
   const destroy = () => {
     for (const p of room.players) playerRoom.delete(p.id);
@@ -263,7 +276,7 @@ function scheduleBotTurn(room) {
       const mv = chooseBotMove(g, pid);
       if (mv.action === 'play') {
         const r = g.play(pid, mv.tileIds);
-        if (r.finished) return settleRound(room);
+        if (r.finished) return finishRound(room);
       } else {
         g.pass(pid);
       }
@@ -280,7 +293,15 @@ function scheduleBotTurn(room) {
   }, delay);
 }
 
+// 마지막 패를 낸 순간의 상태(모든 타일을 냈다는 표시)를 먼저 보여준 뒤, 잠시 후 결과를 정산한다.
+function finishRound(room) {
+  broadcastGame(room);
+  clearTimeout(room.settleTimer);
+  room.settleTimer = setTimeout(() => settleRound(room), 2200);
+}
+
 function settleRound(room) {
+  if (!rooms.has(room.id) || !room.game) return; // 정산 대기 중 방이 사라진 경우(드묾) 무시
   const g = room.game;
   const res = g.results(); // [{id, remaining, twos, eff, tiles}]
   // 순위: eff 오름차순 (0 = 우승)
@@ -512,7 +533,7 @@ const handlers = {
     const room = mustBeInRoom(client);
     if (room.state !== 'playing' || !room.game) throw new Error('게임 중이 아닙니다.');
     const r = room.game.play(client.clientId, msg.tileIds || []);
-    if (r.finished) return settleRound(room);
+    if (r.finished) return finishRound(room);
     broadcastGame(room);
     scheduleBotTurn(room);
   },
@@ -523,6 +544,58 @@ const handlers = {
     room.game.pass(client.clientId);
     broadcastGame(room);
     scheduleBotTurn(room);
+  },
+
+  chat(ws, msg, client) {
+    const room = mustBeInRoom(client);
+    const text = String(msg.text || '').trim().slice(0, 200);
+    if (!text) return;
+    const sender = room.players.find((p) => p.id === client.clientId);
+    const payload = {
+      type: 'chat',
+      id: client.clientId,
+      name: sender ? sender.name : client.name,
+      text,
+      at: Date.now(),
+    };
+    for (const p of room.players) {
+      if (!p.isBot) sendTo(p.id, payload);
+    }
+  },
+
+  // ---- 음성채팅 시그널링 (실제 오디오는 P2P WebRTC, 서버는 offer/answer/ICE 중계만 담당) ----
+  voice_join(ws, msg, client) {
+    const room = mustBeInRoom(client);
+    const p = room.players.find((x) => x.id === client.clientId);
+    if (!p) return;
+    p.inVoice = true;
+    p.micMuted = false;
+    broadcastPresence(room);
+  },
+
+  voice_leave(ws, msg, client) {
+    const room = mustBeInRoom(client);
+    const p = room.players.find((x) => x.id === client.clientId);
+    if (!p) return;
+    p.inVoice = false;
+    p.micMuted = false;
+    broadcastPresence(room);
+  },
+
+  mic_state(ws, msg, client) {
+    const room = mustBeInRoom(client);
+    const p = room.players.find((x) => x.id === client.clientId);
+    if (!p || !p.inVoice) return;
+    p.micMuted = !!msg.muted;
+    broadcastPresence(room);
+  },
+
+  voice_signal(ws, msg, client) {
+    const room = mustBeInRoom(client);
+    const targetId = String(msg.to || '');
+    const target = room.players.find((p) => p.id === targetId && !p.isBot);
+    if (!target) return; // 상대가 이미 나갔으면 조용히 무시
+    sendTo(targetId, { type: 'voice_signal', from: client.clientId, data: msg.data });
   },
 };
 
@@ -572,6 +645,8 @@ function attach(ws) {
       const p = room.players.find((x) => x.id === clientId);
       if (p) {
         p.connected = false;
+        p.inVoice = false;
+        p.micMuted = false;
         reassignHost(room); // 방장 접속이 끊기면 다른 실제 플레이어에게 방장 위임
         broadcastRoom(room);
         if (room.state === 'playing') {
