@@ -20,7 +20,6 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             # 홈서버에 미리 git clone 되어 있는 프로젝트 디렉토리로 이동
-            # (경로가 다르면 아래 경로를 실제 위치로 수정하세요)
             cd ~/lexio-online
 
             # 최신 코드 받아오기
