@@ -23,7 +23,7 @@
     anim: 0,
     callbacks: {},
     lastEvent: null, // {text, until}
-    chatReserve: 0, // 우측 상단 채팅 패널이 열려 있을 때 비워둘 폭(px)
+    chatBubbles: new Map(), // playerId -> {text, until} 채팅 말풍선
 
     init(canvas, callbacks) {
       this.canvas = canvas;
@@ -138,6 +138,11 @@
       if (this.callbacks.onSelectionChange) this.callbacks.onSelectionChange();
     },
 
+    // 채팅 메시지 도착 시 해당 플레이어 아이콘 옆에 몇 초간 말풍선 표시. 같은 사람이 다시 보내면 이전 것을 대체.
+    showChatBubble(id, text) {
+      this.chatBubbles.set(id, { text, until: performance.now() + 5000 });
+    },
+
     /* ---------- 레이아웃 ---------- */
     handLayout() {
       const n = this.handOrder.length;
@@ -159,20 +164,6 @@
       return { x: L.x0 + i * L.spacing, y: L.y - (sel ? 14 : 0), w: L.tw, h: L.th };
     },
 
-    setChatReserve(px) {
-      this.chatReserve = px || 0;
-    },
-
-    // 채팅 패널이 열려 있으면 그 폭만큼 테이블 중심을 왼쪽으로 옮기고, 패널과 겹치지 않도록 반경을 줄인다.
-    tableCenter(baseRx) {
-      const reserve = this.chatReserve;
-      if (!reserve) return { cx: this.W / 2, rx: baseRx };
-      const cx = (this.W - reserve) / 2;
-      const panelLeft = this.W - reserve;
-      const rx = Math.max(80, Math.min(baseRx, panelLeft - cx));
-      return { cx, rx };
-    },
-
     seatPositions() {
       // 상대 좌석: 내 다음 차례부터 시계 방향(왼쪽→위→오른쪽)
       const st = this.state;
@@ -182,9 +173,8 @@
         others.push(st.players[(myIdx + k) % st.players.length]);
       }
       const n = others.length;
-      const cy = this.H * 0.47;
-      const { cx, rx } = this.tableCenter(Math.min(this.W * 0.40, 330));
-      const ry = this.H * 0.30;
+      const cx = this.W / 2, cy = this.H * 0.47;
+      const rx = Math.min(this.W * 0.40, 330), ry = this.H * 0.30;
       // 왼쪽(180°)에서 오른쪽(0°)으로 균등 배치 → 턴 진행 방향이 왼쪽→오른쪽
       return others.map((p, i) => {
         const a = Math.PI * (1 - (i + 1) / (n + 1));
@@ -222,9 +212,8 @@
     },
 
     drawTable(ctx) {
-      const cy = this.H * 0.47;
-      const { cx, rx } = this.tableCenter(Math.min(this.W * 0.34, 300));
-      const ry = this.H * 0.27;
+      const cx = this.W / 2, cy = this.H * 0.47;
+      const rx = Math.min(this.W * 0.34, 300), ry = this.H * 0.27;
       // 테이블 두께(입체감): 아래쪽 어두운 타원
       ctx.fillStyle = '#1c1206';
       ctx.beginPath();
@@ -256,8 +245,7 @@
 
     drawCenter(ctx) {
       const st = this.state;
-      const cy = this.H * 0.47;
-      const { cx } = this.tableCenter(Math.min(this.W * 0.34, 300));
+      const cx = this.W / 2, cy = this.H * 0.47;
       if (st.table) {
         const tiles = st.table.tiles;
         const tw = this.H < 380 ? 34 : 40, th = Math.round(tw * 1.38);
@@ -317,6 +305,37 @@
       ctx.restore();
       ctx.fillStyle = `rgba(255, 231, 176, ${pulse})`;
       ctx.fillText(label, cx, ty);
+    },
+
+    // 채팅 말풍선: cx 위치 위로 꼬리가 bottomY를 가리키는 말풍선을 그린다.
+    drawSpeechBubble(ctx, cx, bottomY, text) {
+      const maxChars = 26;
+      const label = text.length > maxChars ? text.slice(0, maxChars - 1) + '…' : text;
+      ctx.save();
+      ctx.font = '600 11px sans-serif';
+      ctx.textAlign = 'center';
+      const textW = ctx.measureText(label).width;
+      const padX = 10;
+      const w = Math.min(Math.max(textW + padX * 2, 30), 200);
+      const h = 22;
+      const bx = Math.max(4, Math.min(cx - w / 2, this.W - w - 4));
+      const by = bottomY - h - 7;
+      ctx.fillStyle = 'rgba(255,255,255,0.96)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+      ctx.lineWidth = 1;
+      this.roundRect(ctx, bx, by, w, h, 8);
+      ctx.fill();
+      ctx.stroke();
+      // 말풍선 꼬리(아이콘을 가리킴)
+      ctx.beginPath();
+      ctx.moveTo(cx - 6, by + h);
+      ctx.lineTo(cx + 6, by + h);
+      ctx.lineTo(cx, by + h + 7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#181524';
+      ctx.fillText(label, bx + w / 2, by + h / 2 + 4);
+      ctx.restore();
     },
 
     drawSeats(ctx) {
@@ -399,6 +418,11 @@
           ctx.font = '800 10px sans-serif';
           ctx.fillText('PASS', x, y - 4);
         }
+        // 채팅 말풍선
+        const bubble = this.chatBubbles.get(p.id);
+        if (bubble && bubble.until > this.anim) {
+          this.drawSpeechBubble(ctx, x, y - 40, bubble.text);
+        }
       }
     },
 
@@ -447,6 +471,12 @@
         ctx.fillStyle = '#ffc9c9';
         ctx.font = '800 10px sans-serif';
         ctx.fillText('PASS', x + 7, topY);
+      }
+
+      // 채팅 말풍선
+      const myBubble = this.chatBubbles.get(this.myId);
+      if (myBubble && myBubble.until > this.anim) {
+        this.drawSpeechBubble(ctx, x + Math.min(80, nameW + 40), topY - 8, myBubble.text);
       }
     },
 

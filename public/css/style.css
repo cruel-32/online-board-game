@@ -217,10 +217,14 @@ input, select {
 /* ================= 음성채팅 / 채팅 위젯 ================= */
 .side-widgets {
   position: fixed;
-  top: calc(max(8px, env(safe-area-inset-top)) + 42px);
+  top: max(6px, env(safe-area-inset-top)); /* 게임 화면 좌측 상단 제목과 같은 높이 */
   right: max(6px, env(safe-area-inset-right));
   z-index: 55;
   display: flex; gap: 6px;
+}
+/* 대기실은 우측 상단에 초대링크/나가기 버튼이 이미 있으므로 그 아래로 내려서 겹치지 않게 한다 */
+#screen-room.active ~ #side-widgets {
+  top: calc(max(8px, env(safe-area-inset-top)) + 42px);
 }
 .side-widgets.hidden { display: none; }
 .widget-btn { padding: 6px 9px; font-size: 12px; position: relative; }
@@ -235,13 +239,16 @@ input, select {
 
 .chat-panel {
   position: fixed;
-  top: calc(max(8px, env(safe-area-inset-top)) + 78px);
+  top: calc(max(6px, env(safe-area-inset-top)) + 34px);
   right: max(6px, env(safe-area-inset-right));
   z-index: 54;
   width: 230px;
   max-height: min(46vh, 190px);
   padding: 8px;
   display: flex; flex-direction: column; gap: 6px;
+}
+#screen-room.active ~ #chat-panel {
+  top: calc(max(8px, env(safe-area-inset-top)) + 76px);
 }
 .chat-panel.hidden { display: none; }
 .chat-header { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #f0c25a; font-weight: 700; }
@@ -274,6 +281,8 @@ input, select {
   .hud-btn { width: 52px; padding: 6px 3px; font-size: 11px; }
   .room-controls { width: 190px; }
   input, select { padding: 7px 8px; font-size: 13px; }
-  .side-widgets { top: calc(max(6px, env(safe-area-inset-top)) + 36px); }
-  .chat-panel { top: calc(max(6px, env(safe-area-inset-top)) + 66px); width: 190px; max-height: 40vh; }
+  .chat-panel { width: 190px; max-height: 40vh; }
+  #screen-room.active ~ #side-widgets { top: calc(max(6px, env(safe-area-inset-top)) + 36px); }
+  #screen-room.active ~ #chat-panel { top: calc(max(6px, env(safe-area-inset-top)) + 66px); }
+  #screen-game.active ~ #chat-panel { top: calc(max(6px, env(safe-area-inset-top)) + 28px); }
 }

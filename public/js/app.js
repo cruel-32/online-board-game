@@ -332,22 +332,8 @@
   function updateSideWidgets() {
     const inRoom = !!currentRoom;
     $('side-widgets').classList.toggle('hidden', !inRoom);
-    if (!inRoom) {
-      $('chat-panel').classList.add('hidden');
-      updateChatReserve();
-    }
+    if (!inRoom) $('chat-panel').classList.add('hidden');
     refreshVoiceButtons();
-  }
-
-  // 채팅 패널이 열려 있으면 그 폭만큼 게임 캔버스(테이블)에 여유 공간을 요청해 겹치지 않게 한다.
-  function updateChatReserve() {
-    const panel = $('chat-panel');
-    if (panel.classList.contains('hidden')) {
-      GameUI.setChatReserve(0);
-      return;
-    }
-    const rect = panel.getBoundingClientRect();
-    GameUI.setChatReserve(Math.ceil(rect.width + 30));
   }
 
   function refreshVoiceButtons() {
@@ -380,12 +366,8 @@
       $('chat-badge').classList.add('hidden');
       $('chat-input').focus();
     }
-    updateChatReserve();
   });
-  $('btn-chat-close').addEventListener('click', () => {
-    $('chat-panel').classList.add('hidden');
-    updateChatReserve();
-  });
+  $('btn-chat-close').addEventListener('click', () => $('chat-panel').classList.add('hidden'));
 
   function clearChat() {
     $('chat-messages').innerHTML = '';
@@ -402,6 +384,8 @@
     if ($('chat-panel').classList.contains('hidden')) {
       $('chat-badge').classList.remove('hidden');
     }
+    // 채팅창과 별개로, 게임 화면에서 해당 유저 아이콘 옆에 말풍선으로도 잠시 보여준다.
+    GameUI.showChatBubble(msg.id, msg.text);
   }
 
   function sendChat() {
