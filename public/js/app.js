@@ -158,6 +158,7 @@
         if (Sound) Sound.leave();
         VoiceChat.reset();
         clearChat();
+        GameUI.clearChatBubbles();
         updateSideWidgets();
         break;
       case 'kicked':
@@ -168,6 +169,7 @@
         if (Sound) Sound.leave();
         VoiceChat.reset();
         clearChat();
+        GameUI.clearChatBubbles();
         updateSideWidgets();
         break;
       case 'need_password': {

@@ -10,6 +10,11 @@
 
   const SUIT_COLOR = { sun: '#ff6b57', moon: '#52d273', star: '#ffd23e', cloud: '#4db3ff' };
 
+  function hexToRgba(hex, a) {
+    const n = parseInt(hex.slice(1), 16);
+    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+  }
+
   const GameUI = {
     canvas: null, ctx: null, dpr: 1, W: 0, H: 0,
     state: null, myId: null,
@@ -23,19 +28,22 @@
     anim: 0,
     callbacks: {},
     lastEvent: null, // {text, until}
-    chatBubbles: new Map(), // playerId -> {text, until} 채팅 말풍선
+    bubbleLayer: null, // 채팅 말풍선용 최상단 DOM 레이어(캔버스에 그리면 다른 UI에 가려지므로 분리)
+    bubbleEls: new Map(), // playerId -> {el, timer}
     turnFlashUntil: 0, // 내 차례가 막 시작됐을 때 강조 배너를 잠시 띄우기 위한 타임스탬프
 
     init(canvas, callbacks) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
       this.callbacks = callbacks || {};
+      this.bubbleLayer = document.getElementById('chat-bubbles-layer');
       const resize = () => {
         this.dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.W = canvas.clientWidth;
         this.H = canvas.clientHeight;
         canvas.width = Math.round(this.W * this.dpr);
         canvas.height = Math.round(this.H * this.dpr);
+        this.repositionBubbles();
       };
       this.resize = resize;
       window.addEventListener('resize', resize);
@@ -143,18 +151,74 @@
     },
 
     // 채팅 메시지 도착 시 해당 플레이어 아이콘 옆에 몇 초간 말풍선 표시. 같은 사람이 다시 보내면 이전 것을 대체.
+    // 캔버스에 직접 그리면 z-index가 있는 다른 UI(채팅창·위젯 등)에 가려지므로, 항상 최상단인
+    // 별도 DOM 레이어에 말풍선 엘리먼트를 띄우고 아바타 좌표를 화면 좌표로 변환해 위치시킨다.
     showChatBubble(id, text) {
-      this.chatBubbles.set(id, { text, until: performance.now() + 5000 });
+      if (!this.bubbleLayer || !this.state) return;
+      const seat = this.seatPositions().find((s) => s.player.id === id);
+      if (!seat) return; // 현재 게임 화면에 없는 상대는 표시하지 않음
+
+      const maxChars = 26;
+      const label = text.length > maxChars ? text.slice(0, maxChars - 1) + '…' : text;
+
+      let entry = this.bubbleEls.get(id);
+      if (!entry) {
+        const el = document.createElement('div');
+        el.className = 'chat-bubble-el';
+        this.bubbleLayer.appendChild(el);
+        entry = { el, timer: null };
+        this.bubbleEls.set(id, entry);
+      }
+      entry.el.textContent = label;
+      entry.seatX = seat.x;
+      entry.seatY = seat.y;
+      this.positionBubbleEl(entry.el, seat.x, seat.y - 40);
+      // 리플로우 이후 트랜지션이 걸리도록 다음 프레임에 표시 클래스 적용
+      requestAnimationFrame(() => entry.el.classList.add('show'));
+
+      clearTimeout(entry.timer);
+      entry.timer = setTimeout(() => {
+        entry.el.remove();
+        this.bubbleEls.delete(id);
+      }, 5000);
+    },
+
+    // 캔버스 좌표(x, bottomY) → 실제 화면(페이지) 좌표로 변환해 말풍선 DOM 위치를 잡는다.
+    positionBubbleEl(el, x, bottomY) {
+      const rect = this.canvas.getBoundingClientRect();
+      el.style.left = `${rect.left + x}px`;
+      el.style.top = `${rect.top + bottomY}px`;
+    },
+
+    // 창 크기/방향 전환 등으로 아바타 좌표가 바뀌었을 때 떠 있는 말풍선들을 새 위치로 옮긴다.
+    repositionBubbles() {
+      if (!this.state || !this.bubbleEls.size) return;
+      const seats = this.seatPositions();
+      for (const [id, entry] of this.bubbleEls) {
+        const seat = seats.find((s) => s.player.id === id);
+        if (seat) this.positionBubbleEl(entry.el, seat.x, seat.y - 40);
+      }
+    },
+
+    // 방/게임을 나갈 때 남아 있는 말풍선을 모두 정리한다.
+    clearChatBubbles() {
+      for (const entry of this.bubbleEls.values()) {
+        clearTimeout(entry.timer);
+        entry.el.remove();
+      }
+      this.bubbleEls.clear();
     },
 
     /* ---------- 레이아웃 ----------
-     * 손패가 7장을 넘어가면 두 줄로 나눠 가로 폭을 줄인다 (예: 13장 → 앞줄 7장 + 뒷줄 6장).
-     * 세로 모드처럼 가용 폭이 좁을 때는 타일 크기 자체도 줄여 화면 밖으로 잘리지 않게 한다.
+     * 세로 모드(H > W)에서만 손패가 7장을 넘어가면 두 줄로 나눠 가로 폭을 줄인다
+     * (예: 13장 → 앞줄 7장 + 뒷줄 6장). 가로 모드에서는 항상 한 줄로 표시한다.
+     * 그래도 가용 폭이 좁을 때는 타일 크기 자체도 줄여 화면 밖으로 잘리지 않게 한다.
      */
     handLayout() {
       const n = this.handOrder.length;
       const H = this.H, W = this.W;
-      const twoRows = n > 7;
+      const portrait = H > W;
+      const twoRows = portrait && n > 7;
       const c0 = twoRows ? Math.ceil(n / 2) : n;   // 앞줄(화면 하단, 더 많은 쪽) 개수
       const c1 = twoRows ? n - c0 : 0;              // 뒷줄(앞줄 위쪽) 개수
       const maxCount = Math.max(c0, c1, 1);
@@ -227,7 +291,8 @@
       }
       const n = others.length;
       const cx = this.W / 2, cy = this.H * 0.47;
-      const rx = Math.min(this.W * 0.40, 330), ry = this.H * 0.30;
+      const rx = Math.min(this.W * 0.40, 330);
+      const ry = Math.min(this.H * 0.30, rx); // 테이블과 마찬가지로 세로로 긴 타원 방지
       // 왼쪽(180°)에서 오른쪽(0°)으로 균등 배치 → 턴 진행 방향이 왼쪽→오른쪽
       return others.map((p, i) => {
         const a = Math.PI * (1 - (i + 1) / (n + 1));
@@ -249,17 +314,19 @@
       if (this.isMyTurn()) this.drawTurnEffects(ctx);
     },
 
-    // 내 차례임을 놓치지 않도록 화면 전체 테두리 글로우 + 시작 직후 잠깐의 강조 배너를 그린다.
+    // 내 차례임을 놓치지 않도록 화면 전체 테두리 글로우 + 반짝이는 별빛 + 시작 직후 강조 배너를 그린다.
     drawTurnEffects(ctx) {
       const pulse = 0.55 + 0.45 * Math.sin(this.anim / 260);
       ctx.save();
-      ctx.strokeStyle = `rgba(255, 215, 110, ${0.3 + 0.35 * pulse})`;
-      ctx.lineWidth = 5 + 3 * pulse;
-      ctx.shadowColor = '#ffd76e';
-      ctx.shadowBlur = 18 * pulse;
+      ctx.strokeStyle = `rgba(255, 220, 130, ${0.35 + 0.4 * pulse})`;
+      ctx.lineWidth = 5 + 4 * pulse;
+      ctx.shadowColor = '#ffe9a8';
+      ctx.shadowBlur = 26 * pulse;
       this.roundRect(ctx, 3, 3, this.W - 6, this.H - 6, 14);
       ctx.stroke();
       ctx.restore();
+
+      this.drawTurnSparkles(ctx);
 
       if (this.turnFlashUntil > this.anim) {
         const total = 1400;
@@ -268,17 +335,80 @@
         const fadeIn = Math.min(1, t / 0.15);
         const fadeOut = remain < 350 ? Math.max(0, remain / 350) : 1;
         const alpha = Math.min(fadeIn, fadeOut);
-        const scale = 1 + 0.08 * Math.sin(Math.min(t, 1) * Math.PI);
+        const scale = 1 + 0.1 * Math.sin(Math.min(t, 1) * Math.PI);
         ctx.save();
         ctx.globalAlpha = alpha;
         ctx.translate(this.W / 2, this.H * 0.34);
+        // 배너 뒤로 번지는 방사형 빛
+        const glowR = 150 * (0.7 + 0.3 * scale);
+        const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, glowR);
+        glow.addColorStop(0, 'rgba(255, 231, 176, 0.4)');
+        glow.addColorStop(1, 'rgba(255, 231, 176, 0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(0, 0, glowR, 0, Math.PI * 2);
+        ctx.fill();
+
         ctx.scale(scale, scale);
         ctx.textAlign = 'center';
         ctx.font = '900 30px sans-serif';
-        ctx.shadowColor = '#ffd76e';
-        ctx.shadowBlur = 22;
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(70, 45, 5, 0.85)';
+        ctx.shadowColor = '#ffe9a8';
+        ctx.shadowBlur = 26;
+        ctx.strokeText('✨ 당신의 차례! ✨', 0, 0);
         ctx.fillStyle = '#fff3d6';
-        ctx.fillText('당신의 차례!', 0, 0);
+        ctx.fillText('✨ 당신의 차례! ✨', 0, 0);
+        ctx.restore();
+      }
+    },
+
+    // 화면 테두리를 따라 랜덤하게 반짝이는 작은 별빛 파티클 — 내 차례임을 더 눈에 띄게 알려준다.
+    turnSparklePts: null,
+    drawTurnSparkles(ctx) {
+      if (!this.turnSparklePts) {
+        const pts = [];
+        for (let i = 0; i < 22; i++) {
+          pts.push({
+            edge: Math.floor(Math.random() * 4),
+            off: Math.random(),
+            phase: Math.random() * Math.PI * 2,
+            speed: 700 + Math.random() * 900,
+            size: 3 + Math.random() * 4.5,
+          });
+        }
+        this.turnSparklePts = pts;
+      }
+      const W = this.W, H = this.H, m = 12;
+      for (const p of this.turnSparklePts) {
+        let x, y;
+        if (p.edge === 0) { x = m + p.off * (W - 2 * m); y = m; }
+        else if (p.edge === 1) { x = W - m; y = m + p.off * (H - 2 * m); }
+        else if (p.edge === 2) { x = m + p.off * (W - 2 * m); y = H - m; }
+        else { x = m; y = m + p.off * (H - 2 * m); }
+
+        const tw = 0.5 + 0.5 * Math.sin(this.anim / p.speed + p.phase);
+        if (tw < 0.35) continue; // 대부분은 숨어있다가 반짝이는 순간만 보인다
+        const alpha = (tw - 0.35) / 0.65;
+        const s = p.size * (0.7 + 0.5 * tw);
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(x, y);
+        ctx.fillStyle = '#fff7d6';
+        ctx.shadowColor = '#ffe9a8';
+        ctx.shadowBlur = 9;
+        ctx.beginPath();
+        ctx.moveTo(0, -s);
+        ctx.lineTo(s * 0.28, -s * 0.28);
+        ctx.lineTo(s, 0);
+        ctx.lineTo(s * 0.28, s * 0.28);
+        ctx.lineTo(0, s);
+        ctx.lineTo(-s * 0.28, s * 0.28);
+        ctx.lineTo(-s, 0);
+        ctx.lineTo(-s * 0.28, -s * 0.28);
+        ctx.closePath();
+        ctx.fill();
         ctx.restore();
       }
     },
@@ -301,7 +431,8 @@
 
     drawTable(ctx) {
       const cx = this.W / 2, cy = this.H * 0.47;
-      const rx = Math.min(this.W * 0.34, 300), ry = this.H * 0.27;
+      const rx = Math.min(this.W * 0.34, 300);
+      const ry = Math.min(this.H * 0.27, rx); // 세로모드에서도 세로로 긴 타원이 되지 않도록 가로 반지름 이하로 제한
       // 테이블 두께(입체감): 아래쪽 어두운 타원
       ctx.fillStyle = '#1c1206';
       ctx.beginPath();
@@ -395,37 +526,6 @@
       ctx.fillText(label, cx, ty);
     },
 
-    // 채팅 말풍선: cx 위치 위로 꼬리가 bottomY를 가리키는 말풍선을 그린다.
-    drawSpeechBubble(ctx, cx, bottomY, text) {
-      const maxChars = 26;
-      const label = text.length > maxChars ? text.slice(0, maxChars - 1) + '…' : text;
-      ctx.save();
-      ctx.font = '600 11px sans-serif';
-      ctx.textAlign = 'center';
-      const textW = ctx.measureText(label).width;
-      const padX = 10;
-      const w = Math.min(Math.max(textW + padX * 2, 30), 200);
-      const h = 22;
-      const bx = Math.max(4, Math.min(cx - w / 2, this.W - w - 4));
-      const by = bottomY - h - 7;
-      ctx.fillStyle = 'rgba(255,255,255,0.96)';
-      ctx.strokeStyle = 'rgba(0,0,0,0.25)';
-      ctx.lineWidth = 1;
-      this.roundRect(ctx, bx, by, w, h, 8);
-      ctx.fill();
-      ctx.stroke();
-      // 말풍선 꼬리(아이콘을 가리킴)
-      ctx.beginPath();
-      ctx.moveTo(cx - 6, by + h);
-      ctx.lineTo(cx + 6, by + h);
-      ctx.lineTo(cx, by + h + 7);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = '#181524';
-      ctx.fillText(label, bx + w / 2, by + h / 2 + 4);
-      ctx.restore();
-    },
-
     drawSeats(ctx) {
       const st = this.state;
       const seats = this.seatPositions();
@@ -505,11 +605,6 @@
           ctx.fillStyle = '#ffc9c9';
           ctx.font = '800 10px sans-serif';
           ctx.fillText('PASS', x, y - 4);
-        }
-        // 채팅 말풍선
-        const bubble = this.chatBubbles.get(p.id);
-        if (bubble && bubble.until > this.anim) {
-          this.drawSpeechBubble(ctx, x, y - 40, bubble.text);
         }
       }
     },
@@ -630,12 +725,13 @@
     draw3DTile(ctx, x, y, w, h, tile, opts) {
       opts = opts || {};
       const isTop = tile.num === 2; // 렉시오 최고 패 — 화려하게 강조
+      const suitColor = SUIT_COLOR[tile.suit]; // 2 테두리는 금색이 아닌 문양 색으로 강조
       ctx.save();
       if (opts.glow) {
         ctx.shadowColor = '#ffd76e';
         ctx.shadowBlur = 16;
       } else if (isTop) {
-        ctx.shadowColor = '#ffcf4a';
+        ctx.shadowColor = suitColor;
         ctx.shadowBlur = 9;
       }
       // 입체 옆면 (아래+오른쪽)
@@ -671,24 +767,24 @@
         ctx.fillStyle = shine;
         ctx.fillRect(x, y, w, h);
         ctx.restore();
-        // 이중 금테(안쪽)
-        ctx.strokeStyle = '#ffe9a8';
+        // 이중 테두리(안쪽) — 문양 색으로 강조
+        ctx.strokeStyle = hexToRgba(suitColor, 0.9);
         ctx.lineWidth = 1.6;
         this.roundRect(ctx, x + 1.8, y + 1.8, w - 3.6, h - 3.6, 5);
         ctx.stroke();
       }
 
       // 윗면 테두리
-      ctx.strokeStyle = opts.selected ? '#ffd76e' : (isTop ? '#ffcf4a' : 'rgba(255,255,255,0.18)');
+      ctx.strokeStyle = opts.selected ? '#ffd76e' : (isTop ? suitColor : 'rgba(255,255,255,0.18)');
       ctx.lineWidth = opts.selected ? 2 : (isTop ? 1.5 : 1);
       this.roundRect(ctx, x, y, w, h, 6);
       ctx.stroke();
 
       // 숫자/무늬
-      const color = SUIT_COLOR[tile.suit];
+      const color = suitColor;
       ctx.textAlign = 'center';
       if (isTop) {
-        ctx.shadowColor = 'rgba(255, 210, 100, 0.9)';
+        ctx.shadowColor = hexToRgba(suitColor, 0.9);
         ctx.shadowBlur = 5;
       }
       ctx.fillStyle = color;
