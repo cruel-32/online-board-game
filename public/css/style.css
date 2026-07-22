@@ -147,6 +147,14 @@ input, select {
   position: absolute; top: max(6px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left));
   display: flex; align-items: center; gap: 8px; font-size: 12px; color: #b7aec5;
 }
+.autopass-toggle {
+  display: flex; align-items: center; gap: 4px;
+  background: rgba(0, 0, 0, 0.35); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px; padding: 5px 10px 5px 8px;
+  font-size: 11px; color: #d8d2e4; cursor: pointer; pointer-events: auto;
+  user-select: none; -webkit-user-select: none;
+}
+.autopass-toggle input { width: 13px; height: 13px; accent-color: #f0c25a; cursor: pointer; }
 .hud-right {
   position: absolute; right: max(6px, env(safe-area-inset-right)); bottom: 10px;
   display: flex; flex-direction: column; gap: 16px;

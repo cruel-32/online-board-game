@@ -18,6 +18,8 @@
   let gameState = null;
   let pendingJoinRoomId = new URLSearchParams(location.search).get('room');
   let reconnectDelay = 500;
+  let autoPassEnabled = localStorage.getItem('lexio.autoPass') === '1';
+  let autoPassTimer = null;
 
   /* ---------- 공통 UI ---------- */
   function showScreen(name) {
@@ -160,6 +162,7 @@
       case 'left':
         currentRoom = null;
         gameState = null;
+        clearTimeout(autoPassTimer);
         showScreen('lobby');
         if (Sound) Sound.leave();
         VoiceChat.reset();
@@ -170,6 +173,7 @@
       case 'kicked':
         currentRoom = null;
         gameState = null;
+        clearTimeout(autoPassTimer);
         toast('방에서 강퇴되었습니다.');
         showScreen('lobby');
         if (Sound) Sound.leave();
@@ -193,6 +197,7 @@
         $('game-room-name').textContent = `${msg.state.roomName} · ${msg.state.roundNo}라운드`;
         GameUI.setState(msg.state);
         updateHudButtons();
+        maybeAutoPass();
         updateSideWidgets();
         VoiceChat.handleRoster(msg.state.players.filter((p) => p.inVoice).map((p) => p.id));
         break;
@@ -438,12 +443,39 @@
     $('btn-play').disabled = !GameUI.canPlaySelection();
   }
 
+  /* ---------- 오토패스: 낼 수 있는 패가 없을 때 자동으로 패스 ---------- */
+  $('chk-autopass').checked = autoPassEnabled;
+  $('chk-autopass').addEventListener('change', () => {
+    autoPassEnabled = $('chk-autopass').checked;
+    localStorage.setItem('lexio.autoPass', autoPassEnabled ? '1' : '0');
+    maybeAutoPass(); // 켜진 순간 이미 낼 수 없는 상황이면 바로 예약하고, 끄면 예약된 패스를 취소한다
+  });
+
+  function maybeAutoPass() {
+    clearTimeout(autoPassTimer);
+    if (!autoPassEnabled || !gameState) return;
+    const myTurn = gameState.turnId === gameState.you && !gameState.finished;
+    // 선(先)일 때는 항상 낼 수 있는 패가 있으므로(테이블이 비어 있음) 오토패스 대상이 아니다.
+    if (!myTurn || !gameState.table) return;
+    if (!GameUI.playable || GameUI.playable.size > 0) return;
+
+    toast('낼 수 있는 패가 없어 자동으로 패스합니다');
+    autoPassTimer = setTimeout(() => {
+      const stillMyTurn = gameState && gameState.turnId === gameState.you && !gameState.finished;
+      if (autoPassEnabled && stillMyTurn && gameState.table && GameUI.playable && GameUI.playable.size === 0) {
+        send({ type: 'pass' });
+        GameUI.selected.clear();
+      }
+    }, 1000);
+  }
+
   $('btn-play').addEventListener('click', () => {
     if (!GameUI.canPlaySelection()) return;
     send({ type: 'play', tileIds: [...GameUI.selected] });
     GameUI.selected.clear();
   });
   $('btn-pass').addEventListener('click', () => {
+    clearTimeout(autoPassTimer);
     send({ type: 'pass' });
     GameUI.selected.clear();
   });
