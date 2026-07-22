@@ -147,6 +147,12 @@
     pass() {
       speak('패스');
     },
+    // 내 차례 시작: 놓치기 쉬우므로 밝은 2음 알림 벨 + 음성 안내로 명확하게 알린다
+    myTurn() {
+      tone(660, { type: 'sine', dur: 0.09, gain: 0.17 });
+      tone(880, { type: 'sine', dur: 0.16, gain: 0.2, delay: 0.1 });
+      setTimeout(() => speak('내 차례입니다'), 260);
+    },
     // 입장: 밝은 3음 아르페지오
     join() {
       tone(523, { type: 'sine', dur: 0.1, gain: 0.14 });

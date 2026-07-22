@@ -90,8 +90,15 @@
   }
 
   function playGameDiffSounds(prevState, nextState) {
-    if (!Sound || !prevState) return;
-    if (prevState.roomId !== nextState.roomId || prevState.roundNo !== nextState.roundNo) return;
+    if (!Sound) return;
+    // 내 차례 시작: 라운드가 바뀌거나 방을 새로 들어온 경우에도(=이전 차례 정보가 의미 없어도)
+    // 지금 상태가 내 차례라면 놓치지 않도록 항상 검사한다.
+    const sameContext = prevState && prevState.roomId === nextState.roomId && prevState.roundNo === nextState.roundNo;
+    const myTurnNow = nextState.turnId === nextState.you && !nextState.finished;
+    const myTurnBefore = sameContext && prevState.turnId === prevState.you && !prevState.finished;
+    if (myTurnNow && !myTurnBefore) Sound.myTurn();
+
+    if (!sameContext) return;
     const nt = nextState.table, pt = prevState.table;
     if (nt && (!pt || pt.byId !== nt.byId || pt.tiles.length !== nt.tiles.length ||
         pt.tiles.map((t) => t.id).join() !== nt.tiles.map((t) => t.id).join())) {

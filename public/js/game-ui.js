@@ -24,6 +24,7 @@
     callbacks: {},
     lastEvent: null, // {text, until}
     chatBubbles: new Map(), // playerId -> {text, until} 채팅 말풍선
+    turnFlashUntil: 0, // 내 차례가 막 시작됐을 때 강조 배너를 잠시 띄우기 위한 타임스탬프
 
     init(canvas, callbacks) {
       this.canvas = canvas;
@@ -60,6 +61,9 @@
     setState(state) {
       const prevRound = this.state && this.state.roundNo;
       const prev = this.state;
+      const wasMyTurn = !!(prev && prev.turnId === prev.you && !prev.finished);
+      const isMyTurnNow = state.turnId === state.you && !state.finished;
+      if (isMyTurnNow && !wasMyTurn) this.turnFlashUntil = performance.now() + 1400;
       this.state = state;
       this.myId = state.you;
 
@@ -242,6 +246,41 @@
       this.drawSeats(ctx);
       this.drawMyInfo(ctx);
       this.drawHand(ctx);
+      if (this.isMyTurn()) this.drawTurnEffects(ctx);
+    },
+
+    // 내 차례임을 놓치지 않도록 화면 전체 테두리 글로우 + 시작 직후 잠깐의 강조 배너를 그린다.
+    drawTurnEffects(ctx) {
+      const pulse = 0.55 + 0.45 * Math.sin(this.anim / 260);
+      ctx.save();
+      ctx.strokeStyle = `rgba(255, 215, 110, ${0.3 + 0.35 * pulse})`;
+      ctx.lineWidth = 5 + 3 * pulse;
+      ctx.shadowColor = '#ffd76e';
+      ctx.shadowBlur = 18 * pulse;
+      this.roundRect(ctx, 3, 3, this.W - 6, this.H - 6, 14);
+      ctx.stroke();
+      ctx.restore();
+
+      if (this.turnFlashUntil > this.anim) {
+        const total = 1400;
+        const remain = this.turnFlashUntil - this.anim;
+        const t = 1 - remain / total; // 0(시작) → 1(끝)
+        const fadeIn = Math.min(1, t / 0.15);
+        const fadeOut = remain < 350 ? Math.max(0, remain / 350) : 1;
+        const alpha = Math.min(fadeIn, fadeOut);
+        const scale = 1 + 0.08 * Math.sin(Math.min(t, 1) * Math.PI);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(this.W / 2, this.H * 0.34);
+        ctx.scale(scale, scale);
+        ctx.textAlign = 'center';
+        ctx.font = '900 30px sans-serif';
+        ctx.shadowColor = '#ffd76e';
+        ctx.shadowBlur = 22;
+        ctx.fillStyle = '#fff3d6';
+        ctx.fillText('당신의 차례!', 0, 0);
+        ctx.restore();
+      }
     },
 
     drawBackground(ctx) {
@@ -510,10 +549,19 @@
       }
 
       if (isTurn) {
-        const pulse = 0.6 + 0.4 * Math.sin(this.anim / 250);
-        ctx.fillStyle = `rgba(255, 215, 110, ${pulse})`;
+        const pulse = 0.6 + 0.4 * Math.sin(this.anim / 220);
+        const label = '▶ 내 차례';
         ctx.font = '800 12px sans-serif';
-        ctx.fillText('▶ 내 차례', x, topY);
+        const w = ctx.measureText(label).width + 16;
+        ctx.save();
+        ctx.shadowColor = '#ffd76e';
+        ctx.shadowBlur = 10 * pulse;
+        ctx.fillStyle = `rgba(130, 95, 20, ${0.55 + 0.25 * pulse})`;
+        this.roundRect(ctx, x, topY - 13, w, 18, 9);
+        ctx.fill();
+        ctx.restore();
+        ctx.fillStyle = `rgba(255, 233, 176, ${0.8 + 0.2 * pulse})`;
+        ctx.fillText(label, x + 8, topY);
       } else if (me.passed) {
         ctx.fillStyle = 'rgba(120, 40, 55, 0.9)';
         this.roundRect(ctx, x, topY - 12, 44, 16, 8);
