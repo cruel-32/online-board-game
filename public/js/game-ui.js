@@ -222,7 +222,8 @@
       const c0 = twoRows ? Math.ceil(n / 2) : n;   // 앞줄(화면 하단, 더 많은 쪽) 개수
       const c1 = twoRows ? n - c0 : 0;              // 뒷줄(앞줄 위쪽) 개수
       const maxCount = Math.max(c0, c1, 1);
-      const availW = W - 150; // 오른쪽 HUD 버튼 영역 제외
+      const hudReserve = (H < 400 ? 76 : 92) + 40; // 오른쪽 패스/내기 버튼(커짐) 영역 + 여유
+      const availW = W - hudReserve;
 
       let tw = H < 380 ? 38 : 44; // 손패 칸 크기를 줄여 위쪽 정보 영역과의 겹침을 방지
       if (maxCount > 1) {
@@ -868,7 +869,9 @@
       if (!this.pointer.dragging) {
         const dx = p.x - this.pointer.startX;
         const dy = p.y - this.pointer.startY;
-        if (Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(dy)) {
+        // 손패가 두 줄일 때는 줄 사이 이동이 세로 방향 움직임이 되므로, 방향에 상관없이
+        // 이동 거리만으로 드래그 시작 여부를 판단한다(기존엔 가로 이동이 커야만 시작돼 줄 간 이동이 막혔음).
+        if (Math.hypot(dx, dy) > 12) {
           this.pointer.dragging = true;
         }
       }

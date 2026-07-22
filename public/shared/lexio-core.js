@@ -109,8 +109,12 @@
       return makeCombo('straightflush', sorted, [FIVE_RANK.straightflush, sv, SUIT_STRENGTH[top.suit]]);
     if (sv !== null)
       return makeCombo('straight', sorted, [FIVE_RANK.straight, sv, SUIT_STRENGTH[top.suit]]);
-    if (isFlush)
-      return makeCombo('flush', sorted, [FIVE_RANK.flush, numRank(top.num, maxN), SUIT_STRENGTH[top.suit]]);
+    if (isFlush) {
+      // 플러쉬: 무늬가 아니라 5장의 숫자를 높은 순서대로 차례로 비교하고,
+      // 5장의 숫자가 모두 같을 때만 마지막으로 무늬를 비교한다.
+      const numRanksDesc = sorted.map((t) => numRank(t.num, maxN)).sort((a, b) => b - a);
+      return makeCombo('flush', sorted, [FIVE_RANK.flush, ...numRanksDesc, SUIT_STRENGTH[top.suit]]);
+    }
     return null;
   }
 
