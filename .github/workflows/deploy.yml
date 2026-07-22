@@ -1,0 +1,30 @@
+name: Deploy to a personal server
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            # 홈서버에 미리 git clone 되어 있는 프로젝트 디렉토리로 이동
+            # (경로가 다르면 아래 경로를 실제 위치로 수정하세요)
+            cd ~/lexio-online
+
+            # 최신 코드 받아오기
+            git pull origin master
+
+            # 이미지 재빌드 후 컨테이너 재기동 (app만 빌드 컨텍스트가 있어 redis/postgres는 그대로 유지됨)
+            docker compose up -d --build
