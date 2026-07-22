@@ -114,7 +114,6 @@ input, select {
 }
 .room-header { display: flex; align-items: center; justify-content: space-between; }
 .room-header h2 { font-size: 17px; color: #f0c25a; }
-.room-header-right { display: flex; gap: 8px; }
 .room-body { flex: 1; display: flex; gap: 12px; margin-top: 8px; min-height: 0; }
 .room-seats {
   flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
@@ -143,6 +142,8 @@ input, select {
 .room-actions { display: flex; flex-direction: column; gap: 8px; }
 .room-actions .btn { width: 100%; }
 #btn-ready.on { background: linear-gradient(180deg, #3f7a4b, #2c5636); border-color: #7fc98e; }
+.room-footer-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 10px; }
+.room-footer-actions .btn { flex: 1; }
 
 /* ================= 게임 ================= */
 #screen-game { background: radial-gradient(ellipse at 50% 20%, #241f33 0%, #0b0a10 75%); }
@@ -216,17 +217,13 @@ input, select {
 .result-busted { margin-top: 10px; color: #ff8f8f; font-size: 13px; text-align: center; }
 .result-champion { margin-top: 8px; text-align: center; font-size: 15px; color: #ffd76e; }
 
-/* ================= 음성채팅 / 채팅 위젯 ================= */
+/* ================= 음성채팅 / 채팅 위젯 (대기실·게임 화면 공통, 항상 최상단) ================= */
 .side-widgets {
   position: fixed;
-  top: max(6px, env(safe-area-inset-top)); /* 게임 화면 좌측 상단 제목과 같은 높이 */
+  top: max(6px, env(safe-area-inset-top));
   right: max(6px, env(safe-area-inset-right));
   z-index: 55;
   display: flex; gap: 6px;
-}
-/* 대기실은 우측 상단에 초대링크/나가기 버튼이 이미 있으므로 그 아래로 내려서 겹치지 않게 한다 */
-#screen-room.active ~ #side-widgets {
-  top: calc(max(8px, env(safe-area-inset-top)) + 42px);
 }
 .side-widgets.hidden { display: none; }
 .widget-btn { padding: 6px 9px; font-size: 12px; position: relative; }
@@ -239,6 +236,7 @@ input, select {
 }
 .chat-badge.hidden { display: none; }
 
+/* 채팅 리스트: 레이아웃에 영향 없이 게임 화면 위에 반투명 레이어로 떠 있어야 한다 */
 .chat-panel {
   position: fixed;
   top: calc(max(6px, env(safe-area-inset-top)) + 34px);
@@ -248,18 +246,18 @@ input, select {
   max-height: min(46vh, 190px);
   padding: 8px;
   display: flex; flex-direction: column; gap: 6px;
-}
-#screen-room.active ~ #chat-panel {
-  top: calc(max(8px, env(safe-area-inset-top)) + 76px);
+  background: rgba(18, 15, 26, 0.5);
+  border: 1px solid rgba(255, 215, 130, 0.2);
+  backdrop-filter: blur(3px);
 }
 .chat-panel.hidden { display: none; }
 .chat-header { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: #f0c25a; font-weight: 700; }
 .chat-messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; min-height: 60px; }
-.chat-msg { font-size: 12px; line-height: 1.35; }
+.chat-msg { font-size: 12px; line-height: 1.35; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
 .chat-msg .cname { color: #ffd76e; font-weight: 700; margin-right: 4px; }
 .chat-msg.sys { color: #9a93a8; font-style: italic; }
 .chat-input-row { display: flex; gap: 6px; }
-.chat-input-row input { padding: 7px 8px; font-size: 12px; }
+.chat-input-row input { padding: 7px 8px; font-size: 12px; background: rgba(0, 0, 0, 0.45); }
 .chat-input-row .btn { padding: 6px 10px; font-size: 12px; }
 
 .mic-tag { background: #2c5636; color: #bef0c6; }
@@ -283,8 +281,5 @@ input, select {
   .hud-btn { width: 52px; padding: 6px 3px; font-size: 11px; }
   .room-controls { width: 190px; }
   input, select { padding: 7px 8px; font-size: 13px; }
-  .chat-panel { width: 190px; max-height: 40vh; }
-  #screen-room.active ~ #side-widgets { top: calc(max(6px, env(safe-area-inset-top)) + 36px); }
-  #screen-room.active ~ #chat-panel { top: calc(max(6px, env(safe-area-inset-top)) + 66px); }
-  #screen-game.active ~ #chat-panel { top: calc(max(6px, env(safe-area-inset-top)) + 28px); }
+  .chat-panel { width: 190px; max-height: 40vh; top: calc(max(6px, env(safe-area-inset-top)) + 28px); }
 }

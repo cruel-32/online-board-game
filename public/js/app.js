@@ -384,8 +384,9 @@
     if ($('chat-panel').classList.contains('hidden')) {
       $('chat-badge').classList.remove('hidden');
     }
-    // 채팅창과 별개로, 게임 화면에서 해당 유저 아이콘 옆에 말풍선으로도 잠시 보여준다.
-    GameUI.showChatBubble(msg.id, msg.text);
+    // 채팅창과 별개로, 게임 화면에서 상대방 아이콘 옆에 말풍선으로도 잠시 보여준다.
+    // 내 메시지는 이미 채팅창에 보이므로 중복 표시하지 않는다.
+    if (msg.id !== clientId) GameUI.showChatBubble(msg.id, msg.text);
   }
 
   function sendChat() {

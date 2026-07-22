@@ -472,12 +472,6 @@
         ctx.font = '800 10px sans-serif';
         ctx.fillText('PASS', x + 7, topY);
       }
-
-      // 채팅 말풍선
-      const myBubble = this.chatBubbles.get(this.myId);
-      if (myBubble && myBubble.until > this.anim) {
-        this.drawSpeechBubble(ctx, x + Math.min(80, nameW + 40), topY - 8, myBubble.text);
-      }
     },
 
     drawHand(ctx) {
