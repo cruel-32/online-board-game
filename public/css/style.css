@@ -186,6 +186,8 @@ input, select {
   flex-wrap: wrap; align-items: center;
 }
 .assist-row:active { background: rgba(240, 194, 90, 0.15); }
+.assist-row-disabled { opacity: 0.4; }
+.assist-row-disabled:active { background: rgba(255, 255, 255, 0.05); }
 .mini-tile {
   display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
   width: 26px; height: 34px; border-radius: 4px;

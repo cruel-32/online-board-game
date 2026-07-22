@@ -435,6 +435,10 @@
     body.innerHTML = '';
     const hand = gameState.hand;
     const maxN = gameState.maxN;
+    // 손패 타일 비활성화 표시와 같은 기준: 내 차례가 아니면 판단 불가하니 비활성화하지 않고,
+    // 내 차례라면 테이블의 현재 조합과 개수가 같고 더 높아야 낼 수 있는 조합으로 간주한다.
+    const myTurn = GameUI.isMyTurn();
+    const cur = GameUI.currentCombo();
     const groupsDef = [
       ['pair', '페어'], ['triple', '트리플'],
       ['straight', '스트레이트'], ['flush', '플러쉬'],
@@ -454,7 +458,8 @@
       body.appendChild(title);
       for (const c of combos.slice(0, 30)) {
         const row = document.createElement('div');
-        row.className = 'assist-row';
+        const playable = !myTurn || !cur || (c.count === cur.count && core.beats(c, cur));
+        row.className = 'assist-row' + (playable ? '' : ' assist-row-disabled');
         row.innerHTML = c.tiles.map(miniTileHtml).join('');
         row.addEventListener('click', () => {
           GameUI.selectTiles(c.tiles.map((t) => t.id));
