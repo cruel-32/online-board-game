@@ -23,6 +23,20 @@
   function showScreen(name) {
     for (const s of document.querySelectorAll('.screen')) s.classList.remove('active');
     $('screen-' + name).classList.add('active');
+    placeSideWidgets(name);
+  }
+
+  // 대기룸에서는 음성/마이크/채팅 버튼을 초대 링크·나가기 버튼과 같은 줄(하단)로 옮기고,
+  // 게임 화면에서는 원래 자리(우측 상단 고정)로 되돌린다.
+  function placeSideWidgets(screenName) {
+    const widgets = $('side-widgets');
+    if (screenName === 'room') {
+      $('room-footer-actions').insertBefore(widgets, $('room-footer-actions').firstChild);
+      widgets.classList.add('inline');
+    } else {
+      $('side-widgets-home').after(widgets);
+      widgets.classList.remove('inline');
+    }
   }
 
   let toastTimer = null;

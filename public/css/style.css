@@ -142,8 +142,10 @@ input, select {
 .room-actions { display: flex; flex-direction: column; gap: 8px; }
 .room-actions .btn { width: 100%; }
 #btn-ready.on { background: linear-gradient(180deg, #3f7a4b, #2c5636); border-color: #7fc98e; }
-.room-footer-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 10px; }
-.room-footer-actions .btn { flex: 1; }
+/* 초대 링크 복사·나가기 + 음성/마이크/채팅 위젯: 대기실 전체 너비를 쓰는 하단 한 줄 액션 바 */
+.room-footer-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.room-footer-actions .btn { flex: 1 1 auto; white-space: nowrap; }
+.room-footer-actions .widget-btn { flex: 0 0 auto; }
 
 /* ================= 게임 ================= */
 #screen-game { background: radial-gradient(ellipse at 50% 20%, #241f33 0%, #0b0a10 75%); }
@@ -225,7 +227,9 @@ input, select {
   z-index: 55;
   display: flex; gap: 6px;
 }
-.side-widgets.hidden { display: none; }
+/* 대기룸: 초대 링크·나가기 버튼과 같은 줄에 놓이도록 고정 위치를 해제하고 일반 flex 아이템으로 전환 */
+.side-widgets.inline { position: static; display: contents; }
+.side-widgets.hidden { display: none !important; }
 .widget-btn { padding: 6px 9px; font-size: 12px; position: relative; }
 .widget-btn.on { background: linear-gradient(180deg, #3f7a4b, #2c5636); border-color: #7fc98e; }
 .widget-btn.muted { background: linear-gradient(180deg, #7a3040, #55202c); border-color: #c76; }
@@ -279,7 +283,8 @@ input, select {
   .panel { padding: 10px; }
   .btn { padding: 8px 12px; font-size: 13px; }
   .hud-btn { width: 52px; padding: 6px 3px; font-size: 11px; }
-  .room-controls { width: 190px; }
+  .room-controls { width: 220px; }
+  .room-footer-actions .btn { padding: 6px 8px; font-size: 11px; }
   input, select { padding: 7px 8px; font-size: 13px; }
   .chat-panel { width: 190px; max-height: 40vh; top: calc(max(6px, env(safe-area-inset-top)) + 28px); }
 }
