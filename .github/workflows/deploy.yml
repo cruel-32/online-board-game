@@ -23,7 +23,7 @@ jobs:
             cd ~/lexio-online
 
             # 최신 코드 받아오기
-            git pull origin master
+            git pull
 
             # 이미지 재빌드 후 컨테이너 재기동 (app만 빌드 컨텍스트가 있어 redis/postgres는 그대로 유지됨)
             docker compose -f docker-compose.yml up -d --build
