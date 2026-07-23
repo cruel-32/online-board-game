@@ -378,9 +378,10 @@ input, select {
   border-radius: 10px; padding: 5px 6px;
 }
 .fel-bid-arrow {
+  pointer-events: auto; /* #game-hud가 pointer-events:none이므로 명시 필요(안 그러면 클릭이 통과됨) */
   display: block; width: 100%; border: none; cursor: pointer;
-  background: rgba(255,215,130,0.14); color: #ffd76e;
-  font-size: 13px; line-height: 1; padding: 4px 0; border-radius: 6px;
+  background: rgba(255,215,130,0.22); color: #ffd76e;
+  font-size: 15px; line-height: 1; padding: 6px 0; border-radius: 6px;
 }
 .fel-bid-arrow:active { transform: scale(0.94); }
 .fel-bid-arrow:disabled { opacity: 0.35; cursor: default; }

@@ -166,12 +166,10 @@
         ctx.strokeStyle = 'rgba(255,215,130,0.35)';
         ctx.lineWidth = 1;
         this.roundRect(ctx, x, y, cw, ch, 7); ctx.fill(); ctx.stroke();
+        // 쥐 카드 숫자만 표시(패스 획득액은 자루 카드 위 "리워드"로 안내하므로 여기선 생략)
         ctx.fillStyle = '#f0d78a';
-        ctx.font = '800 15px sans-serif';
-        ctx.fillText(String(m.num), x + cw / 2, y + 15);
-        ctx.fillStyle = m.coins > 0 ? '#ffd76e' : '#6f6a80';
-        ctx.font = '700 11px sans-serif';
-        ctx.fillText('🪙' + m.coins, x + cw / 2, y + 29);
+        ctx.font = '800 16px sans-serif';
+        ctx.fillText(String(m.num), x + cw / 2, y + ch / 2 + 6);
         x += cw + gap;
       }
       // 은행 — 쥐 카드 행 아래 가운데(상단 HUD·은행 겹침 방지)
@@ -189,9 +187,8 @@
       const totalW = row.length * cw + Math.max(0, row.length - 1) * gap;
       let x = (this.W - totalW) / 2;
       const y = this.animalRowY();
-      // 패스 시 받는 보상(남은 최저 숫자 쥐 카드 동전) + 패스 때 공개되는 첫 뒷면 카드
+      // 패스 시 받는 보상(남은 최저 숫자 쥐 카드 동전)
       const passReward = ((st.mouse || []).find((m) => m.coins > 0) || {}).coins || 0;
-      const revealIdx = row.findIndex((s) => !s.faceUp);
       const bidding = st.phase === 'bidding' && !st.finished;
       ctx.textAlign = 'center';
       for (let i = 0; i < row.length; i++) {
@@ -218,11 +215,11 @@
         ctx.beginPath();
         ctx.arc(x + cw / 2, y + ch + 9, 5, 0, Math.PI * 2);
         ctx.fill();
-        // 패스하면 이 카드가 공개되고 보상을 받는다는 안내(공개될 첫 뒷면 카드 위)
-        if (bidding && i === revealIdx) {
-          const label = passReward > 0 ? `패스→공개 🪙${passReward}` : '패스→공개';
+        // 패스 시 받는 보상 안내 — 모든 자루 카드 위에 간결하게 "리워드 🪙N"
+        if (bidding && passReward > 0) {
+          const label = `리워드 🪙${passReward}`;
           ctx.font = '800 10px sans-serif';
-          const bw = ctx.measureText(label).width + 14;
+          const bw = ctx.measureText(label).width + 12;
           const by = y - 20;
           ctx.fillStyle = 'rgba(80,45,10,0.92)';
           this.roundRect(ctx, x + cw / 2 - bw / 2, by - 11, bw, 16, 8); ctx.fill();
@@ -289,17 +286,17 @@
           ctx.beginPath(); ctx.arc(x, y - 8, 24, 0, Math.PI * 2); ctx.fill();
           ctx.restore();
         }
-        // 입찰/패스 배지(아바타 위)
+        // 입찰/패스 배지(아바타 위 — 아이콘과 겹치지 않게 충분히 위로)
         if (p.passed) {
           ctx.fillStyle = 'rgba(120,40,55,0.9)';
-          this.roundRect(ctx, x - 20, y - 36, 40, 16, 8); ctx.fill();
+          this.roundRect(ctx, x - 20, y - 46, 40, 16, 8); ctx.fill();
           ctx.fillStyle = '#ffc9c9'; ctx.font = '800 10px sans-serif'; ctx.textAlign = 'center';
-          ctx.fillText('패스', x, y - 24);
+          ctx.fillText('패스', x, y - 34);
         } else if (p.bid > 0) {
           ctx.fillStyle = 'rgba(130,95,20,0.92)';
-          this.roundRect(ctx, x - 26, y - 36, 52, 16, 8); ctx.fill();
+          this.roundRect(ctx, x - 26, y - 46, 52, 16, 8); ctx.fill();
           ctx.fillStyle = '#ffe9b0'; ctx.font = '800 10px sans-serif'; ctx.textAlign = 'center';
-          ctx.fillText('입찰 ' + p.bid, x, y - 24);
+          ctx.fillText('입찰 ' + p.bid, x, y - 34);
         }
         // 아바타(플레이어 색)
         ctx.fillStyle = this._darken(color, 0.35);
@@ -339,13 +336,23 @@
       const st = this.state;
       const hand = st.hand || [];
       if (!hand.length) return;
-      const cw = this.H < 420 ? 40 : 48, ch = Math.round(cw * 1.4), gap = 6;
+      const gap = 6;
       // 세로 모드에서 7장 이상이면 두 줄로(가로 모드는 폭이 넓어 한 줄로도 겹치지 않음)
       const twoRows = this.H > this.W && hand.length >= 7;
       const c0 = twoRows ? Math.ceil(hand.length / 2) : hand.length; // 앞줄(하단, 더 많은 쪽)
       const c1 = twoRows ? hand.length - c0 : 0;                     // 뒷줄(앞줄 위쪽)
       const maxCount = Math.max(c0, c1, 1);
-      const availW = this.W - 160; // 우측 하단 컨트롤(입찰/패스) 영역을 비워둔다
+      // 렉시오와 동일: 좌(패스)·우(입찰) 버튼이 양끝 코너에 있으므로 좌우 대칭으로 비우고 손패를 가운데로 모은다.
+      const sideReserve = (this.H < 400 ? 62 : 76) + 20;
+      const availW = this.W - 2 * sideReserve;
+      let cw = this.H < 420 ? 40 : 48;
+      if (maxCount > 1) {
+        const neededW = cw + (cw + gap) * (maxCount - 1);
+        if (neededW > availW) cw = Math.max(24, Math.floor((availW - gap * (maxCount - 1)) / maxCount));
+      } else if (cw > availW) {
+        cw = Math.max(24, availW);
+      }
+      const ch = Math.round(cw * 1.4);
       const spacing = maxCount > 1 ? Math.min(cw + gap, (availW - cw) / (maxCount - 1)) : 0;
       const rowGap = 8;
       const y0 = this.H - ch - 12;                    // 앞줄(하단)
@@ -353,7 +360,7 @@
       const canPlace = st.phase === 'placing' && this.isMyTurn();
       const xFor = (count) => {
         const totalW = cw + spacing * (Math.max(count, 1) - 1);
-        return (this.W - 70 - totalW) / 2;            // 우측 컨트롤 폭 보정 후 중앙 정렬
+        return (this.W - totalW) / 2;                 // 좌우 대칭 여백 → 화면 중앙 정렬
       };
       const x0start = xFor(c0), x1start = xFor(c1);
       for (let i = 0; i < hand.length; i++) {
