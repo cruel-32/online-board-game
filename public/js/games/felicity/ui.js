@@ -52,11 +52,21 @@
 
     isMyTurn() { return this.state && this.state.turnId === this.myId && !this.state.finished; },
 
-    /* ---------- 입력: 손패 선택(배치 단계) ---------- */
+    /* ---------- 입력: 손패 선택(배치 단계) / 준비완료(라운드 종료) ---------- */
     onDown(e) {
-      if (!this.state || this.state.phase !== 'placing' || !this.isMyTurn()) return;
+      if (!this.state) return;
       const r = this.canvas.getBoundingClientRect();
       const x = e.clientX - r.left, y = e.clientY - r.top;
+      // 라운드 결과창의 준비완료 버튼
+      if (this.state.phase === 'roundover') {
+        const b = this.readyBtnRect;
+        if (b && x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+          if (window.Sound) window.Sound.select();
+          if (this.callbacks.onReady) this.callbacks.onReady();
+        }
+        return; // 라운드 종료 중에는 손패 조작 없음
+      }
+      if (this.state.phase !== 'placing' || !this.isMyTurn()) return;
       // 겹친 카드는 나중에 그린(더 위에 있는) 카드가 우선 → 역순 탐색
       for (let k = this.handRects.length - 1; k >= 0; k--) {
         const hr = this.handRects[k];
@@ -165,8 +175,11 @@
     drawAnimalRow(ctx) {
       const st = this.state;
       const row = st.row || [];
+      // 이번 라운드에 놓일 총 카드 수 = 인원수. 놓일 자리를 미리 빈 칸으로 보여주고, 놓이면 카드로 대체.
+      const n = (st.players || []).length || row.length;
+      const totalSlots = Math.max(n, row.length, 1);
       const cw = this.H < 420 ? 46 : 56, ch = Math.round(cw * 1.4), gap = 10;
-      const totalW = row.length * cw + Math.max(0, row.length - 1) * gap;
+      const totalW = totalSlots * cw + Math.max(0, totalSlots - 1) * gap;
       let x = (this.W - totalW) / 2;
       const y = this.animalRowY();
       // 뒷면 카드가 공개될 순서대로 배정되는 패스 보상(남은 쥐 카드 동전을 낮은 숫자부터)
@@ -174,7 +187,19 @@
       const bidding = st.phase === 'bidding' && !st.finished;
       let hiddenSeq = 0;
       ctx.textAlign = 'center';
-      for (let i = 0; i < row.length; i++) {
+      for (let i = 0; i < totalSlots; i++) {
+        // 아직 놓이지 않은 자리 → 카드와 동일한 크기의 빈 칸(점선)
+        if (i >= row.length) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(255,255,255,0.04)';
+          ctx.strokeStyle = 'rgba(255,215,130,0.35)';
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([5, 4]);
+          this.roundRect(ctx, x, y, cw, ch, 8); ctx.fill(); ctx.stroke();
+          ctx.restore();
+          x += cw + gap;
+          continue;
+        }
         const slot = row[i];
         const ownerColor = core.COLOR_HEX[this._colorOf(slot.ownerId)] || '#888';
         if (slot.faceUp && slot.card) {
@@ -214,11 +239,6 @@
           }
         }
         x += cw + gap;
-      }
-      if (!row.length) {
-        ctx.fillStyle = 'rgba(255,231,176,0.7)';
-        ctx.font = '700 14px sans-serif';
-        ctx.fillText('카드를 놓는 중…', this.W / 2, y + ch / 2);
       }
     },
 
@@ -379,8 +399,9 @@
       }
     },
 
-    // 지난 라운드 결과 — 공개된 카드 + 낙찰/패스 내역을 한눈에 보이는 패널로 표시
+    // 라운드 결과 — 공개된 카드 + 낙찰/패스 내역 + 준비완료 버튼을 담은 패널
     drawLastResult(ctx) {
+      this.readyBtnRect = null;
       if (!this.state || this.state.phase !== 'roundover') return; // 준비완료 게이트 동안 표시
       const lr = this.state.lastResult;
       if (!lr) return;
@@ -395,17 +416,22 @@
       const tw = 34, th = Math.round(tw * 1.4), cgap = 6;
       const cardsW = cards.length ? cards.length * tw + (cards.length - 1) * cgap : 0;
 
-      // 텍스트 라인
+      // 텍스트 라인(패스 보상은 가독성을 위해 한 줄에 한 명씩)
       const lines = [];
       if (lr.discarded) {
         lines.push({ t: '전원 패스 — 자루 카드를 모두 버립니다', c: '#ffd7d7', f: '800 13px sans-serif' });
       } else {
         lines.push({ t: `${lr.winnerName} 낙찰 · 🪙${lr.bid} 지불 → +${lr.pointsGained}점`, c: '#ffe9b0', f: '800 13px sans-serif' });
       }
-      const pg = (lr.passGains || []);
-      if (pg.length) {
-        lines.push({ t: '패스 보상  ' + pg.map((g) => `${g.name} +🪙${g.amount}`).join('   '), c: '#9fe8ff', f: '700 11px sans-serif' });
+      for (const g of (lr.passGains || [])) {
+        lines.push({ t: `패스: ${g.name} +🪙${g.amount}`, c: '#9fe8ff', f: '700 12px sans-serif' });
       }
+
+      // 준비 상태
+      const players = this.state.players || [];
+      const me = players.find((p) => p.id === this.myId);
+      const iReady = !!(me && me.roundReady);
+      const readyCnt = players.filter((p) => p.roundReady).length;
 
       // 패널 크기 계산
       ctx.save();
@@ -414,13 +440,15 @@
       ctx.font = '800 13px sans-serif';
       contentW = Math.max(contentW, ctx.measureText('라운드 결과').width);
       for (const ln of lines) { ctx.font = ln.f; contentW = Math.max(contentW, ctx.measureText(ln.t).width); }
+      const btnW = 132, btnH = 34;
+      contentW = Math.max(contentW, btnW);
       const padX = 16;
       const panelW = Math.min(this.W - 12, contentW + padX * 2);
-      const titleH = 20, cardsH = cards.length ? th + 10 : 0, lineH = 18;
-      const panelH = 10 + titleH + cardsH + lines.length * lineH + 10;
+      const titleH = 20, cardsH = cards.length ? th + 10 : 0, lineH = 18, btnArea = btnH + 12;
+      const panelH = 10 + titleH + cardsH + lines.length * lineH + btnArea + 10;
       const cx = this.W / 2;
-      let top = this.H * 0.54 - panelH / 2;
-      top = Math.max(60, Math.min(top, this.H - panelH - 10));
+      let top = this.H * 0.5 - panelH / 2;
+      top = Math.max(56, Math.min(top, this.H - panelH - 8));
       const x0 = cx - panelW / 2;
 
       // 배경
@@ -464,6 +492,21 @@
         y += lineH - 3;
         ctx.fillStyle = ln.c; ctx.font = ln.f;
         ctx.fillText(ln.t, cx, y);
+      }
+
+      // 준비완료 버튼(미준비) / 대기 상태(준비 완료)
+      y += 12;
+      if (iReady) {
+        ctx.fillStyle = '#9a93a8'; ctx.font = '700 12px sans-serif';
+        ctx.fillText(`다음 라운드 대기 중 · ${readyCnt}/${players.length} 준비`, cx, y + 20);
+      } else {
+        const bx = cx - btnW / 2, by = y;
+        const bp = 0.75 + 0.25 * Math.sin(this.anim / 300);
+        ctx.fillStyle = `rgba(240, 194, 90, ${bp})`;
+        this.roundRect(ctx, bx, by, btnW, btnH, 9); ctx.fill();
+        ctx.fillStyle = '#241a05'; ctx.font = '800 15px sans-serif';
+        ctx.fillText(`준비완료 (${readyCnt}/${players.length})`, cx, by + btnH / 2 + 5);
+        this.readyBtnRect = { x: bx, y: by, w: btnW, h: btnH };
       }
       ctx.restore();
     },

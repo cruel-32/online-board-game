@@ -79,8 +79,12 @@
       this.injected = Array.from(holder.children);
       this.injected.forEach((el) => screen.appendChild(el));
 
-      if (!FelicityUI.canvas) FelicityUI.init(canvas, { onSelect: () => this.refreshControls() });
-      else { FelicityUI.callbacks = { onSelect: () => this.refreshControls() }; FelicityUI.resize && FelicityUI.resize(); }
+      const cbs = {
+        onSelect: () => this.refreshControls(),
+        onReady: () => this.ctx.send({ type: 'game_action', action: { kind: 'ready' } }),
+      };
+      if (!FelicityUI.canvas) FelicityUI.init(canvas, cbs);
+      else { FelicityUI.callbacks = cbs; FelicityUI.resize && FelicityUI.resize(); }
 
       $('fel-rules').addEventListener('click', () => window.Modal.open('fel-rules-popup'));
       $('fel-result-ready').addEventListener('click', () => {
@@ -126,20 +130,9 @@
       if (elL) elL.innerHTML = ''; // 기본: 좌측 컨트롤 비움(패스는 경매 차례에만)
       const s = this.state;
 
-      // 라운드 종료 → 렉시오처럼 전원이 준비완료를 눌러야 다음 라운드로 진행
+      // 라운드 종료 → 준비완료 버튼은 결과창(캔버스 패널) 안에서 처리하므로 HUD 컨트롤은 비운다
       if (s.phase === 'roundover' && !s.finished) {
-        const players = s.players || [];
-        const meP = players.find((p) => p.id === s.you);
-        const iReady = !!(meP && meP.roundReady);
-        const cnt = players.filter((p) => p.roundReady).length;
-        if (iReady) {
-          el.innerHTML = `<div class="fel-hint">다음 라운드 대기 중…<br>${cnt}/${players.length} 준비 완료</div>`;
-        } else {
-          el.innerHTML = `<button id="fel-ready" class="btn hud-btn-main gold">준비<br>완료</button>`;
-          $('fel-ready').addEventListener('click', () => {
-            this.ctx.send({ type: 'game_action', action: { kind: 'ready' } });
-          });
-        }
+        el.innerHTML = '';
         return;
       }
 
