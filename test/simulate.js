@@ -172,6 +172,7 @@ for (const pc of [3, 4, 5]) {
         const mv = chooseBotMove(g, pid);
         if (mv.kind === 'place') g.place(pid, mv.cardId);
         else if (mv.kind === 'bid') g.bid(pid, mv.amount);
+        else if (mv.kind === 'ready') g.ready(pid);
         else g.pass(pid);
         assert(++steps < 5000, '무한 루프 없음');
       }

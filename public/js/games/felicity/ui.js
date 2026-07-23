@@ -81,7 +81,7 @@
       this.drawAnimalRow(ctx);
       this.drawHand(ctx);
       this.drawLastResult(ctx);
-      if (this.isMyTurn()) this.drawTurnFrame(ctx);
+      if (this.isMyTurn() && this.state.phase !== 'roundover') this.drawTurnFrame(ctx);
     },
 
     drawBackground(ctx) {
@@ -99,7 +99,7 @@
     seatCenter() {
       const cx = this.W / 2;
       const avatarR = 18;
-      const topReserve = 92;                       // 쥐 카드 행 + 은행이 차지하는 상단 높이
+      const topReserve = 46;                        // 상단 은행 표시 + 여백(쥐 카드 행 제거로 축소)
       const ry = Math.min(this.H * 0.12, 90);
       const cy = topReserve + avatarR + 6 + ry;    // 가장 높은 아바타가 상단 영역을 침범하지 않도록
       const rx = Math.min(this.W * 0.40, 330);
@@ -152,31 +152,13 @@
       ctx.closePath();
     },
 
-    // 쥐 카드 행 + 은행
+    // 상단 은행 표시(쥐 카드 행은 제거 — 패스 보상은 자루 카드 위 "리워드"로만 안내)
     drawMouseRow(ctx) {
       const st = this.state;
-      const mice = st.mouse || [];
-      const cw = 44, ch = 34, gap = 8;
-      const totalW = mice.length * cw + (mice.length - 1) * gap;
-      let x = (this.W - totalW) / 2;
-      const y = 34; // 상단 HUD(방 이름·나가기·위젯)와 겹치지 않도록 아래로 내림
-      ctx.textAlign = 'center';
-      for (const m of mice) {
-        ctx.fillStyle = 'rgba(255,255,255,0.06)';
-        ctx.strokeStyle = 'rgba(255,215,130,0.35)';
-        ctx.lineWidth = 1;
-        this.roundRect(ctx, x, y, cw, ch, 7); ctx.fill(); ctx.stroke();
-        // 쥐 카드 숫자만 표시(패스 획득액은 자루 카드 위 "리워드"로 안내하므로 여기선 생략)
-        ctx.fillStyle = '#f0d78a';
-        ctx.font = '800 16px sans-serif';
-        ctx.fillText(String(m.num), x + cw / 2, y + ch / 2 + 6);
-        x += cw + gap;
-      }
-      // 은행 — 쥐 카드 행 아래 가운데(상단 HUD·은행 겹침 방지)
       ctx.fillStyle = '#ffd76e';
-      ctx.font = '700 12px sans-serif';
+      ctx.font = '700 13px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`은행 🪙${st.bank}`, this.W / 2, y + ch + 16);
+      ctx.fillText(`은행 🪙${st.bank}`, this.W / 2, 24);
     },
 
     // 동물 카드 열(자루)
@@ -187,9 +169,10 @@
       const totalW = row.length * cw + Math.max(0, row.length - 1) * gap;
       let x = (this.W - totalW) / 2;
       const y = this.animalRowY();
-      // 패스 시 받는 보상(남은 최저 숫자 쥐 카드 동전)
-      const passReward = ((st.mouse || []).find((m) => m.coins > 0) || {}).coins || 0;
+      // 뒷면 카드가 공개될 순서대로 배정되는 패스 보상(남은 쥐 카드 동전을 낮은 숫자부터)
+      const remainingRewards = (st.mouse || []).filter((m) => m.coins > 0).map((m) => m.coins);
       const bidding = st.phase === 'bidding' && !st.finished;
+      let hiddenSeq = 0;
       ctx.textAlign = 'center';
       for (let i = 0; i < row.length; i++) {
         const slot = row[i];
@@ -215,16 +198,20 @@
         ctx.beginPath();
         ctx.arc(x + cw / 2, y + ch + 9, 5, 0, Math.PI * 2);
         ctx.fill();
-        // 패스 시 받는 보상 안내 — 모든 자루 카드 위에 간결하게 "리워드 🪙N"
-        if (bidding && passReward > 0) {
-          const label = `리워드 🪙${passReward}`;
-          ctx.font = '800 10px sans-serif';
-          const bw = ctx.measureText(label).width + 12;
-          const by = y - 20;
-          ctx.fillStyle = 'rgba(80,45,10,0.92)';
-          this.roundRect(ctx, x + cw / 2 - bw / 2, by - 11, bw, 16, 8); ctx.fill();
-          ctx.fillStyle = '#ffe0a0';
-          ctx.fillText(label, x + cw / 2, by);
+        // 패스 보상 안내 — 뒷면 카드 위에 공개 순서에 맞는 값으로 "리워드 🪙N"
+        if (bidding && !slot.faceUp) {
+          const reward = remainingRewards[hiddenSeq];
+          hiddenSeq += 1;
+          if (reward > 0) {
+            const label = `리워드 🪙${reward}`;
+            ctx.font = '800 10px sans-serif';
+            const bw = ctx.measureText(label).width + 12;
+            const by = y - 20;
+            ctx.fillStyle = 'rgba(80,45,10,0.92)';
+            this.roundRect(ctx, x + cw / 2 - bw / 2, by - 11, bw, 16, 8); ctx.fill();
+            ctx.fillStyle = '#ffe0a0';
+            ctx.fillText(label, x + cw / 2, by);
+          }
         }
         x += cw + gap;
       }
@@ -274,7 +261,7 @@
       const seats = this.seatPositions();
       for (const s of seats) {
         const p = s.player;
-        const isTurn = st.turnId === p.id && !st.finished;
+        const isTurn = st.turnId === p.id && !st.finished && st.phase !== 'roundover';
         const color = core.COLOR_HEX[p.color] || '#888';
         const x = s.x, y = s.y;
 
@@ -306,10 +293,12 @@
         ctx.textAlign = 'center';
         ctx.fillStyle = '#f4efe4'; ctx.font = '700 14px sans-serif';
         ctx.fillText(p.isBot ? '🤖' : (p.name || '?').slice(0, 1), x, y - 3);
-        // 시작(선) 표시
+        // 시작(선) 표시 — 렉시오와 동일한 "선" 배지
         if (p.isStart) {
-          ctx.font = '13px sans-serif';
-          ctx.fillText('⭐', x + 16, y - 16);
+          ctx.fillStyle = '#c98a2e';
+          ctx.beginPath(); ctx.arc(x + 16, y - 21, 9, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#fff3d6'; ctx.font = '700 10px sans-serif';
+          ctx.fillText('선', x + 16, y - 17.5);
         }
         // 이름
         ctx.font = '600 11px sans-serif';
@@ -343,7 +332,7 @@
       const c1 = twoRows ? hand.length - c0 : 0;                     // 뒷줄(앞줄 위쪽)
       const maxCount = Math.max(c0, c1, 1);
       // 렉시오와 동일: 좌(패스)·우(입찰) 버튼이 양끝 코너에 있으므로 좌우 대칭으로 비우고 손패를 가운데로 모은다.
-      const sideReserve = (this.H < 400 ? 62 : 76) + 20;
+      const sideReserve = (this.H < 400 ? 60 : 66) + 12;
       const availW = this.W - 2 * sideReserve;
       let cw = this.H < 420 ? 40 : 48;
       if (maxCount > 1) {
@@ -385,22 +374,24 @@
       if (me) {
         ctx.textAlign = 'left';
         ctx.fillStyle = '#ffd76e'; ctx.font = '700 12px sans-serif';
-        const info = `${me.name}  🪙${me.coins}  🐱${me.collectedCount}` + (me.passed ? '  · 패스' : '');
+        const info = `${me.name}${me.isStart ? '(선)' : ''}  🪙${me.coins}  🐱${me.collectedCount}` + (me.passed ? '  · 패스' : '');
         ctx.fillText(info, 10, (twoRows ? y1 : y0) - 8);
       }
     },
 
     // 지난 라운드 결과 — 공개된 카드 + 낙찰/패스 내역을 한눈에 보이는 패널로 표시
     drawLastResult(ctx) {
-      if (this.lastResultUntil < this.anim) return;
+      if (!this.state || this.state.phase !== 'roundover') return; // 준비완료 게이트 동안 표시
       const lr = this.state.lastResult;
       if (!lr) return;
 
-      // 이번 라운드에 등장한 자루 카드(획득 kept / 제거 removed)
-      const cards = [
-        ...(lr.kept || []).map((c) => ({ card: c, kept: true })),
-        ...(lr.removed || []).map((c) => ({ card: c, kept: false })),
-      ];
+      // 중앙에 놓였던 순서 그대로(서버가 순서 정보 제공). 없으면 kept→removed 순서로 대체.
+      const cards = (lr.cards && lr.cards.length)
+        ? lr.cards.map((c) => ({ card: c.card, kept: c.kept }))
+        : [
+            ...(lr.kept || []).map((c) => ({ card: c, kept: true })),
+            ...(lr.removed || []).map((c) => ({ card: c, kept: false })),
+          ];
       const tw = 34, th = Math.round(tw * 1.4), cgap = 6;
       const cardsW = cards.length ? cards.length * tw + (cards.length - 1) * cgap : 0;
 
@@ -421,7 +412,7 @@
       ctx.textAlign = 'center';
       let contentW = cardsW;
       ctx.font = '800 13px sans-serif';
-      contentW = Math.max(contentW, ctx.measureText('지난 라운드 결과').width);
+      contentW = Math.max(contentW, ctx.measureText('라운드 결과').width);
       for (const ln of lines) { ctx.font = ln.f; contentW = Math.max(contentW, ctx.measureText(ln.t).width); }
       const padX = 16;
       const panelW = Math.min(this.W - 12, contentW + padX * 2);
@@ -443,7 +434,7 @@
 
       let y = top + 10 + 14;
       ctx.fillStyle = '#ffd76e'; ctx.font = '800 13px sans-serif';
-      ctx.fillText('지난 라운드 결과', cx, y);
+      ctx.fillText('라운드 결과', cx, y);
       y += 6;
 
       // 공개 카드 썸네일(kept=선명 / removed=반투명 + ✕)

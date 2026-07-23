@@ -18,6 +18,7 @@ class FelicityGame {
   constructor(players) {
     this.playerIds = players.map((p) => p.id);
     this.n = players.length;
+    this.botIds = new Set((players || []).filter((p) => p.isBot).map((p) => p.id));
     this.colors = {};
     this.hands = new Map();
     this.coins = new Map();
@@ -82,6 +83,12 @@ class FelicityGame {
     if (this.finished || this.phase === 'done') return null;
     if (this.phase === 'placing') return this.playerIds[(this.startIdx + this.placeIdx) % this.n];
     if (this.phase === 'bidding') return this.playerIds[this.turnIdx];
+    if (this.phase === 'roundover') {
+      // 준비 안 한 봇을 우선 반환(자동 준비 유도) → 없으면 준비 안 한 아무나(연결 끊긴 사람 자동 처리용)
+      const pendBot = this.playerIds.find((id) => this.botIds.has(id) && !this.readySet.has(id));
+      if (pendBot) return pendBot;
+      return this.playerIds.find((id) => !this.readySet.has(id)) || null;
+    }
     return null;
   }
 
@@ -165,22 +172,48 @@ class FelicityGame {
     const { removed, kept } = core.resolveDogs(bag);
     this.collected.get(winnerId).push(...kept);
     const pointsGained = kept.reduce((s, c) => s + core.cardPoints(c), 0);
+    const removedIds = new Set(removed.map((c) => c.id));
     this.lastResult = {
       winnerId, bid: this.highBid, pointsGained,
+      // 중앙에 놓였던 순서 그대로(획득 kept / 제거 removed 표시)
+      cards: bag.map((c) => ({ card: c, kept: !removedIds.has(c.id) })),
       kept: kept.slice(), removed: removed.slice(), discarded: false,
       passGains: this.passGains.slice(),
     };
-    this._finishOrNext({ keepStart: false, skipRefill: false });
+    this._enterRoundOver({ keepStart: false, skipRefill: false });
   }
 
   _discardRound() {
+    const bag = this.row.map((s) => s.card);
     this.lastResult = {
       winnerId: null, bid: 0, pointsGained: 0,
-      kept: [], removed: this.row.map((s) => s.card), discarded: true,
+      cards: bag.map((c) => ({ card: c, kept: false })),
+      kept: [], removed: bag.slice(), discarded: true,
       passGains: this.passGains.slice(),
     };
     // 시작 플레이어 유지, 다음 라운드 코인 미적재
-    this._finishOrNext({ keepStart: true, skipRefill: true });
+    this._enterRoundOver({ keepStart: true, skipRefill: true });
+  }
+
+  // 라운드 종료 후 전원이 "준비완료"를 누를 때까지 대기(렉시오처럼 다음 라운드로 자동으로 넘어가지 않음)
+  _enterRoundOver(opts) {
+    this.phase = 'roundover';
+    this.pendingAdvance = opts;
+    this.readySet = new Set();
+  }
+
+  ready(pid) {
+    if (this.phase !== 'roundover') throw new Error('지금은 준비할 수 없습니다.');
+    if (!this.playerIds.includes(pid)) throw new Error('참가자가 아닙니다.');
+    this.readySet.add(pid);
+    if (this.playerIds.every((id) => this.readySet.has(id))) {
+      const opts = this.pendingAdvance || { keepStart: false, skipRefill: false };
+      this.pendingAdvance = null;
+      this.readySet = new Set();
+      this._finishOrNext(opts);
+      return { ended: this.finished };
+    }
+    return { ended: false };
   }
 
   _finishOrNext(opts) {

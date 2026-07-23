@@ -171,7 +171,7 @@
       const c1 = twoRows ? n - c0 : 0;              // 뒷줄(앞줄 위쪽) 개수
       const maxCount = Math.max(c0, c1, 1);
       // 패스(좌)·내기(우) 버튼이 화면 양끝 코너에 있으므로 좌우 양쪽을 비워 손패를 가운데로 모은다.
-      const sideReserve = (H < 400 ? 62 : 76) + 20;
+      const sideReserve = (H < 400 ? 60 : 66) + 12;
       const availW = W - 2 * sideReserve;
 
       let tw = H < 380 ? 38 : 44; // 손패 칸 크기를 줄여 위쪽 정보 영역과의 겹침을 방지

@@ -32,6 +32,7 @@ function estimateBag(game) {
 }
 
 function chooseBotMove(game, pid) {
+  if (game.phase === 'roundover') return { kind: 'ready' };
   if (game.phase === 'placing') {
     const hand = game.hands.get(pid);
     // 보관 선호도가 가장 낮은 카드를 버린다(개 → 음수 고양이 순).

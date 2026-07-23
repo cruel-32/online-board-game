@@ -13,7 +13,7 @@ module.exports = {
     name: '펠리시티',
     minPlayers: 4,
     maxPlayers: 5,
-    settleDelay: 5000, // 마지막 라운드 결과(공개 카드·낙찰/패스 내역)를 충분히 본 뒤 최종 점수판을 띄운다
+    settleDelay: 0, // 라운드 종료 후 준비완료 게이트(phase='roundover')가 페이싱을 담당하므로 지연 불필요
   },
 
   defaultOptions() { return {}; },
@@ -38,6 +38,7 @@ module.exports = {
     if (kind === 'place') return game.place(playerId, action.cardId);
     if (kind === 'bid') return game.bid(playerId, action.amount);
     if (kind === 'pass') return game.pass(playerId);
+    if (kind === 'ready') return game.ready(playerId);
     throw new Error('알 수 없는 동작입니다.');
   },
 
@@ -63,6 +64,7 @@ module.exports = {
       passed: game.passed.has(p.id),
       collectedCount: game.collected.get(p.id).length,
       isStart: game.playerIds[game.startIdx] === p.id,
+      roundReady: game.phase === 'roundover' && game.readySet ? game.readySet.has(p.id) : false,
       inVoice: !!p.inVoice, micMuted: !!p.micMuted,
     }));
 
@@ -72,6 +74,7 @@ module.exports = {
       winnerName: lr.winnerId ? nameOf(lr.winnerId) : null,
       bid: lr.bid,
       pointsGained: lr.pointsGained || 0,
+      cards: lr.cards || [],
       kept: lr.kept,
       removed: lr.removed,
       discarded: lr.discarded,
