@@ -1,5 +1,5 @@
 'use strict';
-const core = require('../../public/shared/lexio-core.js');
+const core = require('../../../../public/shared/lexio-core.js');
 
 function shuffle(arr) {
   const a = arr.slice();

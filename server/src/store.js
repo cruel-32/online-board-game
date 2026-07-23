@@ -17,12 +17,14 @@ async function initPg() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS round_results (
         id SERIAL PRIMARY KEY,
+        game_id TEXT NOT NULL DEFAULT 'lexio',
         room_name TEXT NOT NULL,
         round_no INT NOT NULL,
         results JSONB NOT NULL,
         match_over BOOLEAN NOT NULL DEFAULT FALSE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
       )`);
+    await pool.query(`ALTER TABLE round_results ADD COLUMN IF NOT EXISTS game_id TEXT NOT NULL DEFAULT 'lexio'`);
     pg = pool;
     console.log('[pg] connected');
   } catch (e) {
@@ -52,12 +54,12 @@ async function init() {
   await initPg();
 }
 
-async function saveRound(roomName, roundNo, results, matchOver) {
+async function saveRound(gameId, roomName, roundNo, payload) {
   if (pg) {
     try {
       await pg.query(
-        'INSERT INTO round_results (room_name, round_no, results, match_over) VALUES ($1,$2,$3,$4)',
-        [roomName, roundNo, JSON.stringify(results), !!matchOver]
+        'INSERT INTO round_results (game_id, room_name, round_no, results, match_over) VALUES ($1,$2,$3,$4,$5)',
+        [gameId, roomName, roundNo, JSON.stringify(payload), !!(payload && (payload.matchOver || payload.gameOver))]
       );
     } catch (e) {
       console.error('[pg] saveRound failed:', e.message);
@@ -66,10 +68,10 @@ async function saveRound(roomName, roundNo, results, matchOver) {
   if (redis) {
     try {
       await redis.lpush(
-        'lexio:recent_rounds',
-        JSON.stringify({ roomName, roundNo, results, matchOver, at: Date.now() })
+        'boardgames:recent_rounds',
+        JSON.stringify({ gameId, roomName, roundNo, payload, at: Date.now() })
       );
-      await redis.ltrim('lexio:recent_rounds', 0, 199);
+      await redis.ltrim('boardgames:recent_rounds', 0, 199);
     } catch (_) { /* 무시 */ }
   }
 }

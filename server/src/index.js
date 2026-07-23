@@ -33,5 +33,5 @@ wss.on('close', () => clearInterval(heartbeat));
 store.init().catch((e) => console.error('[store] init error:', e.message));
 
 server.listen(PORT, () => {
-  console.log(`렉시오 온라인 서버 시작: http://localhost:${PORT}`);
+  console.log(`보드게임 온라인 서버 시작: http://localhost:${PORT}`);
 });

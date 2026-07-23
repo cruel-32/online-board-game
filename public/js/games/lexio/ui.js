@@ -28,22 +28,19 @@
     anim: 0,
     callbacks: {},
     lastEvent: null, // {text, until}
-    bubbleLayer: null, // 채팅 말풍선용 최상단 DOM 레이어(캔버스에 그리면 다른 UI에 가려지므로 분리)
-    bubbleEls: new Map(), // playerId -> {el, timer}
     turnFlashUntil: 0, // 내 차례가 막 시작됐을 때 강조 배너를 잠시 띄우기 위한 타임스탬프
 
     init(canvas, callbacks) {
       this.canvas = canvas;
       this.ctx = canvas.getContext('2d');
       this.callbacks = callbacks || {};
-      this.bubbleLayer = document.getElementById('chat-bubbles-layer');
       const resize = () => {
         this.dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.W = canvas.clientWidth;
         this.H = canvas.clientHeight;
         canvas.width = Math.round(this.W * this.dpr);
         canvas.height = Math.round(this.H * this.dpr);
-        this.repositionBubbles();
+        if (window.Chat) window.Chat.reposition();
       };
       this.resize = resize;
       window.addEventListener('resize', resize);
@@ -150,63 +147,14 @@
       if (this.callbacks.onSelectionChange) this.callbacks.onSelectionChange();
     },
 
-    // 채팅 메시지 도착 시 해당 플레이어 아이콘 옆에 몇 초간 말풍선 표시. 같은 사람이 다시 보내면 이전 것을 대체.
-    // 캔버스에 직접 그리면 z-index가 있는 다른 UI(채팅창·위젯 등)에 가려지므로, 항상 최상단인
-    // 별도 DOM 레이어에 말풍선 엘리먼트를 띄우고 아바타 좌표를 화면 좌표로 변환해 위치시킨다.
-    showChatBubble(id, text) {
-      if (!this.bubbleLayer || !this.state) return;
+    // 채팅 말풍선 앵커: 해당 플레이어 아바타 위쪽의 페이지 좌표를 반환(Chat 코어가 사용).
+    // 현재 게임 화면에 없는 상대(또는 나 자신)는 null.
+    bubbleAnchor(id) {
+      if (!this.state || !this.canvas) return null;
       const seat = this.seatPositions().find((s) => s.player.id === id);
-      if (!seat) return; // 현재 게임 화면에 없는 상대는 표시하지 않음
-
-      const maxChars = 26;
-      const label = text.length > maxChars ? text.slice(0, maxChars - 1) + '…' : text;
-
-      let entry = this.bubbleEls.get(id);
-      if (!entry) {
-        const el = document.createElement('div');
-        el.className = 'chat-bubble-el';
-        this.bubbleLayer.appendChild(el);
-        entry = { el, timer: null };
-        this.bubbleEls.set(id, entry);
-      }
-      entry.el.textContent = label;
-      entry.seatX = seat.x;
-      entry.seatY = seat.y;
-      this.positionBubbleEl(entry.el, seat.x, seat.y - 40);
-      // 리플로우 이후 트랜지션이 걸리도록 다음 프레임에 표시 클래스 적용
-      requestAnimationFrame(() => entry.el.classList.add('show'));
-
-      clearTimeout(entry.timer);
-      entry.timer = setTimeout(() => {
-        entry.el.remove();
-        this.bubbleEls.delete(id);
-      }, 5000);
-    },
-
-    // 캔버스 좌표(x, bottomY) → 실제 화면(페이지) 좌표로 변환해 말풍선 DOM 위치를 잡는다.
-    positionBubbleEl(el, x, bottomY) {
+      if (!seat) return null;
       const rect = this.canvas.getBoundingClientRect();
-      el.style.left = `${rect.left + x}px`;
-      el.style.top = `${rect.top + bottomY}px`;
-    },
-
-    // 창 크기/방향 전환 등으로 아바타 좌표가 바뀌었을 때 떠 있는 말풍선들을 새 위치로 옮긴다.
-    repositionBubbles() {
-      if (!this.state || !this.bubbleEls.size) return;
-      const seats = this.seatPositions();
-      for (const [id, entry] of this.bubbleEls) {
-        const seat = seats.find((s) => s.player.id === id);
-        if (seat) this.positionBubbleEl(entry.el, seat.x, seat.y - 40);
-      }
-    },
-
-    // 방/게임을 나갈 때 남아 있는 말풍선을 모두 정리한다.
-    clearChatBubbles() {
-      for (const entry of this.bubbleEls.values()) {
-        clearTimeout(entry.timer);
-        entry.el.remove();
-      }
-      this.bubbleEls.clear();
+      return { x: rect.left + seat.x, y: rect.top + seat.y - 40 };
     },
 
     /* ---------- 레이아웃 ----------
@@ -222,8 +170,9 @@
       const c0 = twoRows ? Math.ceil(n / 2) : n;   // 앞줄(화면 하단, 더 많은 쪽) 개수
       const c1 = twoRows ? n - c0 : 0;              // 뒷줄(앞줄 위쪽) 개수
       const maxCount = Math.max(c0, c1, 1);
-      const hudReserve = (H < 400 ? 62 : 76) + 40; // 오른쪽 패스/내기 버튼 영역 + 여유
-      const availW = W - hudReserve;
+      // 패스(좌)·내기(우) 버튼이 화면 양끝 코너에 있으므로 좌우 양쪽을 비워 손패를 가운데로 모은다.
+      const sideReserve = (H < 400 ? 62 : 76) + 20;
+      const availW = W - 2 * sideReserve;
 
       let tw = H < 380 ? 38 : 44; // 손패 칸 크기를 줄여 위쪽 정보 영역과의 겹침을 방지
       if (maxCount > 1) {
@@ -240,7 +189,7 @@
 
       const xFor = (count) => {
         const totalW = tw + spacing * (Math.max(count, 1) - 1);
-        return (W - 70 - totalW) / 2;
+        return (W - totalW) / 2; // 좌우 대칭 여백 → 화면 중앙 정렬
       };
       const y0 = H - th - 10;                       // 앞줄(화면 하단)
       const y1 = twoRows ? y0 - th - rowGap : y0;    // 뒷줄(앞줄 위쪽)
@@ -617,7 +566,8 @@
       const me = st.players.find((p) => p.id === this.myId);
       if (!me) return;
       const L = this.handLayout();
-      const x = 10;
+      // 좌우 코너의 패스/내기 버튼과 겹치지 않도록, 가운데로 모인 손패의 왼쪽 끝 위에 정보를 얹는다.
+      const x = Math.max(10, L.x0);
       // 손패(맨 위 줄) 바로 위에 두 줄로 압축 배치 (겹침 방지): 아래 줄=이름/칩/선, 위 줄=차례·패스 표시
       const handTopY = L.twoRows ? L.y1 : L.y0;
       const rowY = handTopY - 10;

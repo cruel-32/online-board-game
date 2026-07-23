@@ -1,15 +1,13 @@
 'use strict';
-const { Game } = require('./game');
-const { chooseBotMove } = require('./bot');
+/**
+ * 게임 독립 방/로비 오케스트레이터.
+ * 방 생명주기·로비·채팅·음성 시그널링·봇 스케줄링을 담당하고,
+ * 게임별 규칙/직렬화/정산은 room.engine(플러그인)에 위임한다.
+ */
+const registry = require('./games/registry');
 const store = require('./store');
 
-const DEFAULT_CHIPS = 50; // 기본 지급 칩(최소값). 방장이 10개 단위로 늘릴 수 있음
 const BOT_NAMES = ['봇 알파', '봇 브라보', '봇 찰리', '봇 델타'];
-
-function normalizeChips(v) {
-  const n = Math.round(Number(v) / 10) * 10;
-  return Number.isFinite(n) && n >= 50 ? n : DEFAULT_CHIPS;
-}
 
 const clients = new Map(); // clientId -> { clientId, ws, name }
 const rooms = new Map(); // roomId -> room
@@ -41,6 +39,8 @@ function publicRoomList() {
   return Array.from(rooms.values()).map((r) => ({
     id: r.id,
     name: r.name,
+    gameId: r.gameId,
+    gameName: r.engine.meta.name,
     players: r.players.length,
     maxPlayers: r.maxPlayers,
     locked: !!r.password,
@@ -49,27 +49,37 @@ function publicRoomList() {
 }
 
 function broadcastLobby() {
-  const msg = { type: 'lobby', rooms: publicRoomList() };
+  const msg = { type: 'lobby', rooms: publicRoomList(), games: registry.listGames() };
   for (const c of clients.values()) {
     if (!playerRoom.has(c.clientId)) send(c.ws, msg);
   }
 }
 
 function serializeRoom(room, viewerId) {
+  const engine = room.engine;
   return {
     type: 'room',
     room: {
       id: room.id,
       name: room.name,
+      gameId: room.gameId,
+      games: registry.listGames(),
+      game: {
+        id: engine.meta.id,
+        name: engine.meta.name,
+        minPlayers: engine.meta.minPlayers,
+        maxPlayers: engine.meta.maxPlayers,
+      },
+      options: room.options,
       maxPlayers: room.maxPlayers,
-      chipsPerPlayer: room.chipsPerPlayer,
       hostId: room.hostId,
       state: room.state,
       locked: !!room.password,
       you: viewerId,
       players: room.players.map((p) => ({
         id: p.id, name: p.name, isBot: p.isBot,
-        ready: p.ready, connected: p.connected, chips: p.chips,
+        ready: p.ready, connected: p.connected,
+        seat: engine.seatLabel(room, p),
         inVoice: !!p.inVoice, micMuted: !!p.micMuted,
       })),
       lastResult: room.lastResult || null,
@@ -85,41 +95,7 @@ function broadcastRoom(room) {
 }
 
 function serializeGame(room, viewerId) {
-  const g = room.game;
-  const nameOf = (id) => {
-    const p = room.players.find((x) => x.id === id);
-    return p ? p.name : '?';
-  };
-  return {
-    type: 'game',
-    state: {
-      roomId: room.id,
-      roomName: room.name,
-      roundNo: room.roundNo,
-      maxN: g.maxN,
-      you: viewerId,
-      players: room.players.map((p) => ({
-        id: p.id, name: p.name, isBot: p.isBot,
-        connected: p.connected, chips: p.chips,
-        tileCount: g.hands.get(p.id).length,
-        passed: g.passed.has(p.id),
-        inVoice: !!p.inVoice, micMuted: !!p.micMuted,
-      })),
-      turnId: g.currentPlayerId(),
-      leaderId: g.leaderId,
-      table: g.current
-        ? {
-            tiles: g.current.combo.tiles,
-            combo: { type: g.current.combo.type, count: g.current.combo.count, rank: g.current.combo.rank },
-            byId: g.current.byId,
-            byName: nameOf(g.current.byId),
-          }
-        : null,
-      hand: g.hands.get(viewerId) || [],
-      finished: g.finished,
-      winnerId: g.winnerId,
-    },
-  };
+  return { type: 'game', state: room.engine.serialize(room.game, room, viewerId) };
 }
 
 function broadcastGame(room) {
@@ -128,7 +104,7 @@ function broadcastGame(room) {
   }
 }
 
-// 음성채팅/마이크 상태처럼 방 상태에 얹혀가는 정보가 바뀌었을 때, 현재 화면(대기실/게임)에 맞는 브로드캐스트를 보낸다.
+// 음성/마이크 상태처럼 방 상태에 얹혀가는 정보가 바뀌었을 때 현재 화면에 맞는 브로드캐스트.
 function broadcastPresence(room) {
   if (room.state === 'playing' && room.game) broadcastGame(room);
   else broadcastRoom(room);
@@ -136,13 +112,16 @@ function broadcastPresence(room) {
 
 /* ---------------- 방 관리 ---------------- */
 
-function createRoom(client, { name, password, maxPlayers, chips }) {
+function createRoom(client, msg) {
+  const engine = registry.getEngine(String(msg.gameId || registry.DEFAULT_GAME));
   const room = {
     id: roomCode(),
-    name: String(name || client.name + '의 방').slice(0, 20),
-    password: password ? String(password).slice(0, 20) : '',
-    maxPlayers: [3, 4, 5].includes(+maxPlayers) ? +maxPlayers : 5,
-    chipsPerPlayer: normalizeChips(chips),
+    name: String(msg.name || client.name + '의 방').slice(0, 20),
+    password: msg.password ? String(msg.password).slice(0, 20) : '',
+    gameId: engine.meta.id,
+    engine,
+    options: engine.normalizeOptions(engine.defaultOptions()),
+    maxPlayers: engine.meta.maxPlayers,
     hostId: client.clientId,
     state: 'waiting',
     players: [],
@@ -160,14 +139,15 @@ function createRoom(client, { name, password, maxPlayers, chips }) {
 }
 
 function joinRoomInternal(room, client) {
-  room.players.push({
+  const player = {
     id: client.clientId,
     name: client.name,
     isBot: false,
     ready: false,
     connected: true,
-    chips: room.chipsPerPlayer,
-  });
+  };
+  room.engine.initPlayer(room, player);
+  room.players.push(player);
   playerRoom.set(client.clientId, room.id);
   clearTimeout(room.emptyTimer);
   broadcastRoom(room);
@@ -202,7 +182,6 @@ function leaveRoom(clientId) {
     reassignHost(room);
     broadcastRoom(room);
   }
-  // 명시적으로 나간 것이므로 실제 플레이어가 더 없으면 곧바로 방을 폭파한다.
   checkRoomEmpty(room, true);
   broadcastLobby();
 }
@@ -217,7 +196,7 @@ function checkRoomEmpty(room, immediate) {
   clearTimeout(room.emptyTimer);
   const activeHumans = room.players.filter((p) => !p.isBot && p.connected);
   if (activeHumans.length > 0) return;
-  clearTimeout(room.botTimer); // 지켜보는 실제 플레이어가 없으면 봇끼리 진행하지 않는다.
+  clearTimeout(room.botTimer);
   clearTimeout(room.settleTimer);
 
   const destroy = () => {
@@ -226,7 +205,6 @@ function checkRoomEmpty(room, immediate) {
     broadcastLobby();
   };
   if (immediate) return destroy();
-  // 접속이 끊긴 경우엔 재접속할 시간을 잠시 준다.
   room.emptyTimer = setTimeout(() => {
     const stillEmpty = !room.players.some((p) => !p.isBot && p.connected);
     if (stillEmpty) destroy();
@@ -236,7 +214,9 @@ function checkRoomEmpty(room, immediate) {
 /* ---------------- 게임 진행 ---------------- */
 
 function startGame(room) {
-  if (room.players.length < 3) throw new Error('최소 3인이 필요합니다. 봇을 추가하세요.');
+  const engine = room.engine;
+  if (room.players.length < engine.meta.minPlayers)
+    throw new Error(`최소 ${engine.meta.minPlayers}인이 필요합니다. 봇을 추가하세요.`);
   if (room.players.length > room.maxPlayers) throw new Error('최대 인원을 초과했습니다.');
   const humansNotReady = room.players.filter(
     (p) => !p.isBot && p.connected && p.id !== room.hostId && !p.ready
@@ -244,14 +224,13 @@ function startGame(room) {
   if (humansNotReady.length) throw new Error('아직 준비하지 않은 플레이어가 있습니다.');
 
   if (room.matchOver) {
-    // 새 매치: 칩 초기화
-    for (const p of room.players) p.chips = room.chipsPerPlayer;
+    engine.resetMatch(room);
     room.matchOver = false;
     room.roundNo = 0;
   }
   room.roundNo += 1;
   room.state = 'playing';
-  room.game = new Game(room.players);
+  room.game = engine.createGame(room);
   for (const p of room.players) p.ready = p.isBot;
   broadcastRoom(room);
   broadcastGame(room);
@@ -261,119 +240,65 @@ function startGame(room) {
 
 function scheduleBotTurn(room) {
   clearTimeout(room.botTimer);
-  const g = room.game;
-  if (!g || g.finished || room.state !== 'playing') return;
-  const pid = g.currentPlayerId();
+  const g = room.game, engine = room.engine;
+  if (!g || room.state !== 'playing') return;
+  const pid = engine.currentActor(g);
+  if (!pid) return;
   const p = room.players.find((x) => x.id === pid);
   if (!p) return;
-  // 봇이거나, 접속이 끊긴 사람은 일정 시간 후 자동 진행
   const isAuto = p.isBot || !p.connected;
   if (!isAuto) return;
-  const delay = p.isBot ? 900 + Math.random() * 900 : 8000;
+  const delay = p.isBot ? engine.botDelay(g) : 8000;
   room.botTimer = setTimeout(() => {
-    if (room.game !== g || g.finished || g.currentPlayerId() !== pid) return;
+    if (room.game !== g || room.state !== 'playing' || engine.currentActor(g) !== pid) return;
     try {
-      const mv = chooseBotMove(g, pid);
-      if (mv.action === 'play') {
-        const r = g.play(pid, mv.tileIds);
-        if (r.finished) return finishRound(room);
-      } else {
-        g.pass(pid);
-      }
+      const action = engine.botAction(g, pid);
+      const r = engine.applyAction(g, room, pid, action);
+      if (r && r.ended) return finishGame(room);
       broadcastGame(room);
       scheduleBotTurn(room);
     } catch (e) {
       console.error('[bot] move failed:', e.message);
       try {
-        g.pass(pid);
+        engine.applyAction(g, room, pid, { kind: 'pass' });
         broadcastGame(room);
         scheduleBotTurn(room);
-      } catch (_) { /* 선인데 낼 수 없는 상황은 없음 */ }
+      } catch (_) { /* 무시 */ }
     }
   }, delay);
 }
 
-// 마지막 패를 낸 순간의 상태(모든 타일을 냈다는 표시)를 먼저 보여준 뒤, 잠시 후 결과를 정산한다.
-function finishRound(room) {
+// 게임(라운드/세션) 종료 상태를 잠시 보여준 뒤 정산.
+function finishGame(room) {
   broadcastGame(room);
   clearTimeout(room.settleTimer);
-  room.settleTimer = setTimeout(() => settleRound(room), 2200);
+  const delay = room.engine.meta.settleDelay || 0;
+  room.settleTimer = setTimeout(() => settleGame(room), delay);
 }
 
-function settleRound(room) {
-  if (!rooms.has(room.id) || !room.game) return; // 정산 대기 중 방이 사라진 경우(드묾) 무시
-  const g = room.game;
-  const res = g.results(); // [{id, remaining, twos, eff, tiles}]
-  // 순위: eff 오름차순 (0 = 우승)
-  const sorted = res.slice().sort((a, b) => a.eff - b.eff);
-  const rankOf = new Map();
-  sorted.forEach((r, i) => {
-    // 동점자는 같은 순위
-    const prev = i > 0 ? sorted[i - 1] : null;
-    rankOf.set(r.id, prev && prev.eff === r.eff ? rankOf.get(prev.id) : i + 1);
-  });
-
-  const chipsOf = new Map(room.players.map((p) => [p.id, p.chips]));
-  const delta = new Map(res.map((r) => [r.id, 0]));
-
-  // 모든 쌍에 대해: 남은 타일이 많은 쪽이 차이만큼 지불 (칩 잔액 한도)
-  for (let i = 0; i < sorted.length; i++) {
-    for (let j = i + 1; j < sorted.length; j++) {
-      const win = sorted[i], lose = sorted[j];
-      const diff = lose.eff - win.eff;
-      if (diff <= 0) continue;
-      const pay = Math.min(chipsOf.get(lose.id), diff);
-      if (pay <= 0) continue;
-      chipsOf.set(lose.id, chipsOf.get(lose.id) - pay);
-      chipsOf.set(win.id, chipsOf.get(win.id) + pay);
-      delta.set(lose.id, delta.get(lose.id) - pay);
-      delta.set(win.id, delta.get(win.id) + pay);
-    }
-  }
-
-  for (const p of room.players) p.chips = chipsOf.get(p.id);
-  const busted = room.players.filter((p) => p.chips <= 0);
-  const matchOver = busted.length > 0;
-  room.matchOver = matchOver;
-
-  const rows = res
-    .map((r) => {
-      const p = room.players.find((x) => x.id === r.id);
-      return {
-        id: r.id,
-        name: p.name,
-        isBot: p.isBot,
-        rank: rankOf.get(r.id),
-        remaining: r.remaining,
-        twos: r.twos,
-        eff: r.eff,
-        delta: delta.get(r.id),
-        chips: p.chips,
-      };
-    })
-    .sort((a, b) => a.rank - b.rank);
-
-  room.lastResult = { roundNo: room.roundNo, rows, matchOver, bustedNames: busted.map((b) => b.name) };
+function settleGame(room) {
+  if (!rooms.has(room.id) || !room.game) return;
+  const { payload } = room.engine.settle(room.game, room);
+  room.lastResult = payload;
   room.state = 'waiting';
   room.game = null;
   clearTimeout(room.botTimer);
   for (const p of room.players) p.ready = p.isBot;
 
-  store.saveRound(room.name, room.roundNo, rows, matchOver).catch(() => {});
+  store.saveRound(room.gameId, room.name, room.roundNo, payload).catch(() => {});
 
   for (const p of room.players) {
-    if (!p.isBot) sendTo(p.id, { type: 'round_over', result: room.lastResult });
+    if (!p.isBot) sendTo(p.id, { type: 'round_over', result: payload });
   }
   broadcastRoom(room);
   broadcastLobby();
 }
 
 function maybeAutoStart(room) {
-  // 모든 인원(호스트 포함)이 준비되면 자동 시작하지 않고 호스트의 시작을 기다린다.
-  // 단, 라운드 사이(직전 결과 존재)에는 전원 준비 시 자동으로 다음 라운드 시작.
+  // 라운드/게임 사이(직전 결과 존재)에 전원 준비 시 자동으로 다음 게임 시작.
   if (room.state !== 'waiting' || !room.lastResult) return;
   const humans = room.players.filter((p) => !p.isBot && p.connected);
-  if (humans.length && humans.every((p) => p.ready) && room.players.length >= 3) {
+  if (humans.length && humans.every((p) => p.ready) && room.players.length >= room.engine.meta.minPlayers) {
     try {
       startGame(room);
     } catch (e) {
@@ -396,15 +321,14 @@ const handlers = {
     clients.set(clientId, client);
     ws.clientId = clientId;
 
-    // 재접속: 방에 있었다면 복귀
     const roomId = playerRoom.get(clientId);
     const room = roomId ? rooms.get(roomId) : null;
     if (room) {
       const p = room.players.find((x) => x.id === clientId);
       if (p) {
         p.connected = true;
-        clearTimeout(room.emptyTimer); // 방 폭파 예약 취소
-        if (!p.isBot && !room.hostId) room.hostId = p.id; // 아무도 방장이 아니면 재접속한 본인이 이어받음
+        clearTimeout(room.emptyTimer);
+        if (!p.isBot && !room.hostId) room.hostId = p.id;
         send(ws, { type: 'hello_ok', clientId, name, view: room.state === 'playing' ? 'game' : 'room' });
         send(ws, serializeRoom(room, clientId));
         if (room.state === 'playing') send(ws, serializeGame(room, clientId));
@@ -414,7 +338,7 @@ const handlers = {
       playerRoom.delete(clientId);
     }
     send(ws, { type: 'hello_ok', clientId, name, view: 'lobby' });
-    send(ws, { type: 'lobby', rooms: publicRoomList() });
+    send(ws, { type: 'lobby', rooms: publicRoomList(), games: registry.listGames() });
   },
 
   set_name(ws, msg, client) {
@@ -448,26 +372,51 @@ const handlers = {
   leave_room(ws, msg, client) {
     leaveRoom(client.clientId);
     send(ws, { type: 'left' });
-    send(ws, { type: 'lobby', rooms: publicRoomList() });
+    send(ws, { type: 'lobby', rooms: publicRoomList(), games: registry.listGames() });
+  },
+
+  // 방장이 대기 중에 게임 종류를 변경
+  set_game(ws, msg, client) {
+    const room = mustBeHost(client);
+    if (room.state !== 'waiting') throw new Error('대기 중에만 변경할 수 있습니다.');
+    const engine = registry.getEngine(String(msg.gameId || ''));
+    if (engine.meta.id === room.gameId) return;
+    if (room.players.length > engine.meta.maxPlayers)
+      throw new Error(`${engine.meta.name}은(는) 최대 ${engine.meta.maxPlayers}인입니다. 인원을 줄이세요.`);
+    room.gameId = engine.meta.id;
+    room.engine = engine;
+    room.options = engine.normalizeOptions(engine.defaultOptions());
+    room.maxPlayers = Math.min(Math.max(room.maxPlayers, engine.meta.minPlayers), engine.meta.maxPlayers);
+    for (const p of room.players) engine.initPlayer(room, p);
+    // 게임이 바뀌면 진행 상태/결과 초기화
+    room.lastResult = null;
+    room.matchOver = false;
+    room.roundNo = 0;
+    for (const p of room.players) if (!p.isBot) p.ready = false;
+    broadcastRoom(room);
+    broadcastLobby();
   },
 
   set_max(ws, msg, client) {
     const room = mustBeHost(client);
     const n = +msg.maxPlayers;
-    if (![3, 4, 5].includes(n)) throw new Error('인원은 3~5명입니다.');
+    const { minPlayers, maxPlayers } = room.engine.meta;
+    if (!(n >= minPlayers && n <= maxPlayers)) throw new Error(`인원은 ${minPlayers}~${maxPlayers}명입니다.`);
     if (n < room.players.length) throw new Error('현재 인원보다 적게 설정할 수 없습니다.');
     room.maxPlayers = n;
     broadcastRoom(room);
     broadcastLobby();
   },
 
-  set_chips(ws, msg, client) {
+  // 게임별 설정값 변경(예: 렉시오 칩)
+  set_option(ws, msg, client) {
     const room = mustBeHost(client);
     if (room.state !== 'waiting') throw new Error('대기 중에만 변경할 수 있습니다.');
     if (room.lastResult && !room.matchOver)
-      throw new Error('라운드 진행 중에는 칩 개수를 변경할 수 없습니다. 매치 종료 후 변경하세요.');
-    room.chipsPerPlayer = normalizeChips(msg.chips);
-    for (const p of room.players) p.chips = room.chipsPerPlayer;
+      throw new Error('진행 중에는 변경할 수 없습니다. 종료 후 변경하세요.');
+    const next = { ...room.options, [String(msg.key)]: msg.value };
+    room.options = room.engine.normalizeOptions(next);
+    for (const p of room.players) room.engine.initPlayer(room, p);
     broadcastRoom(room);
     broadcastLobby();
   },
@@ -477,14 +426,15 @@ const handlers = {
     if (room.state !== 'waiting') throw new Error('대기 중에만 가능합니다.');
     if (room.players.length >= room.maxPlayers) throw new Error('자리가 없습니다.');
     const used = room.players.filter((p) => p.isBot).length;
-    room.players.push({
+    const bot = {
       id: 'bot-' + ++botSeq,
       name: BOT_NAMES[used % BOT_NAMES.length],
       isBot: true,
       ready: true,
       connected: true,
-      chips: room.chipsPerPlayer,
-    });
+    };
+    room.engine.initPlayer(room, bot);
+    room.players.push(bot);
     broadcastRoom(room);
     broadcastLobby();
   },
@@ -509,7 +459,7 @@ const handlers = {
     room.players = room.players.filter((p) => p.id !== target.id);
     playerRoom.delete(target.id);
     sendTo(target.id, { type: 'kicked' });
-    sendTo(target.id, { type: 'lobby', rooms: publicRoomList() });
+    sendTo(target.id, { type: 'lobby', rooms: publicRoomList(), games: registry.listGames() });
     broadcastRoom(room);
     broadcastLobby();
   },
@@ -529,19 +479,12 @@ const handlers = {
     startGame(room);
   },
 
-  play(ws, msg, client) {
+  // 게임별 액션(렉시오 play/pass, 펠리시티 bid/pass/place_card 등)을 엔진에 위임
+  game_action(ws, msg, client) {
     const room = mustBeInRoom(client);
     if (room.state !== 'playing' || !room.game) throw new Error('게임 중이 아닙니다.');
-    const r = room.game.play(client.clientId, msg.tileIds || []);
-    if (r.finished) return finishRound(room);
-    broadcastGame(room);
-    scheduleBotTurn(room);
-  },
-
-  pass(ws, msg, client) {
-    const room = mustBeInRoom(client);
-    if (room.state !== 'playing' || !room.game) throw new Error('게임 중이 아닙니다.');
-    room.game.pass(client.clientId);
+    const r = room.engine.applyAction(room.game, room, client.clientId, msg.action || {});
+    if (r && r.ended) return finishGame(room);
     broadcastGame(room);
     scheduleBotTurn(room);
   },
@@ -563,7 +506,7 @@ const handlers = {
     }
   },
 
-  // ---- 음성채팅 시그널링 (실제 오디오는 P2P WebRTC, 서버는 offer/answer/ICE 중계만 담당) ----
+  // ---- 음성채팅 시그널링 (실제 오디오는 P2P WebRTC, 서버는 offer/answer/ICE 중계만) ----
   voice_join(ws, msg, client) {
     const room = mustBeInRoom(client);
     const p = room.players.find((x) => x.id === client.clientId);
@@ -594,7 +537,7 @@ const handlers = {
     const room = mustBeInRoom(client);
     const targetId = String(msg.to || '');
     const target = room.players.find((p) => p.id === targetId && !p.isBot);
-    if (!target) return; // 상대가 이미 나갔으면 조용히 무시
+    if (!target) return;
     sendTo(targetId, { type: 'voice_signal', from: client.clientId, data: msg.data });
   },
 };
@@ -637,7 +580,7 @@ function attach(ws) {
     const clientId = ws.clientId;
     if (!clientId) return;
     const client = clients.get(clientId);
-    if (!client || client.ws !== ws) return; // 새 연결로 대체됨
+    if (!client || client.ws !== ws) return;
     client.ws = null;
     const roomId = playerRoom.get(clientId);
     const room = roomId ? rooms.get(roomId) : null;
@@ -647,13 +590,13 @@ function attach(ws) {
         p.connected = false;
         p.inVoice = false;
         p.micMuted = false;
-        reassignHost(room); // 방장 접속이 끊기면 다른 실제 플레이어에게 방장 위임
+        reassignHost(room);
         broadcastRoom(room);
         if (room.state === 'playing') {
           broadcastGame(room);
-          scheduleBotTurn(room); // 끊긴 사람 차례면 자동 진행 예약
+          scheduleBotTurn(room);
         }
-        checkRoomEmpty(room); // 재접속 유예 후 실제 플레이어가 없으면 방 폭파
+        checkRoomEmpty(room);
       }
     }
   });

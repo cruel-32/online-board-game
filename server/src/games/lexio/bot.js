@@ -1,5 +1,5 @@
 'use strict';
-const core = require('../../public/shared/lexio-core.js');
+const core = require('../../../../public/shared/lexio-core.js');
 
 function lowestBy(plays) {
   return plays.reduce((best, p) => (core.cmpRank(p.rank, best.rank) < 0 ? p : best));

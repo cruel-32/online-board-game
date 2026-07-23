@@ -5,8 +5,8 @@
  */
 const assert = require('assert');
 const core = require('../public/shared/lexio-core.js');
-const { Game } = require('../server/src/game');
-const { chooseBotMove } = require('../server/src/bot');
+const { Game } = require('../server/src/games/lexio/game');
+const { chooseBotMove } = require('../server/src/games/lexio/bot');
 
 const T = (suit, num) => ({ id: `${suit}-${num}`, suit, num });
 
@@ -138,6 +138,49 @@ for (const pc of [3, 4, 5]) {
     }
   assert.deepEqual(delta, [18, 13, -2, -7, -22]);
   console.log('✅ 칩 정산 (룰북 예제 일치)');
+}
+
+/* ---------- 8. 펠리시티: 개/토끼 효과 ---------- */
+{
+  const fcore = require('../public/shared/felicity-core.js');
+  const C = (kind, value, size) => ({ id: `x-${kind}-${value}-${size || ''}`, kind, value, size });
+  let r = fcore.resolveDogs([C('cat', 11), C('cat', -5), C('dog', 0, 'big'), C('cat', 3)]);
+  assert(r.removed.some((c) => c.value === 11) && r.removed.some((c) => c.kind === 'dog'), '큰 개는 양수 최고 고양이 제거');
+  r = fcore.resolveDogs([C('cat', 11), C('cat', -8), C('dog', 0, 'small')]);
+  assert(r.removed.some((c) => c.value === -8) && r.removed.some((c) => c.kind === 'dog'), '작은 개는 최저 고양이 제거');
+  r = fcore.resolveDogs([C('cat', 11), C('dog', 0, 'big'), C('dog', 0, 'small')]);
+  assert(r.removed.length === 2 && r.removed.every((c) => c.kind === 'dog'), '개 2장은 개만 제거');
+  // 큰 개인데 양수 고양이 없음 → 음수 중 최고값(0에 가까움) 제거
+  r = fcore.resolveDogs([C('cat', -8), C('cat', -5), C('dog', 0, 'big')]);
+  assert(r.removed.some((c) => c.value === -5), '양수 없으면 큰 개는 음수 최고값 제거');
+  console.log('✅ 펠리시티 개/토끼 효과');
+}
+
+/* ---------- 9. 펠리시티: 봇 자동 대전 (4/5인) ---------- */
+{
+  const { FelicityGame } = require('../server/src/games/felicity/game');
+  const { chooseBotMove } = require('../server/src/games/felicity/bot');
+  for (const pc of [4, 5]) {
+    for (let t = 0; t < 20; t++) {
+      const players = Array.from({ length: pc }, (_, i) => ({ id: 'p' + i, isBot: true }));
+      const g = new FelicityGame(players);
+      for (const p of players) assert.equal(g.hands.get(p.id).length, 9);
+      let steps = 0;
+      while (!g.finished) {
+        const pid = g.currentActorId();
+        assert(pid, '진행 중이면 행동자 존재');
+        const mv = chooseBotMove(g, pid);
+        if (mv.kind === 'place') g.place(pid, mv.cardId);
+        else if (mv.kind === 'bid') g.bid(pid, mv.amount);
+        else g.pass(pid);
+        assert(++steps < 5000, '무한 루프 없음');
+      }
+      assert.equal(g.round, 9);
+      for (const p of players) assert.equal(g.hands.get(p.id).length, 0);
+      for (const r of g.results()) assert(r.coins >= 0, '코인 음수 아님');
+    }
+    console.log(`✅ 펠리시티 ${pc}인 봇 자동 대전 20판 완주`);
+  }
 }
 
 console.log('\n🎉 모든 테스트 통과');
