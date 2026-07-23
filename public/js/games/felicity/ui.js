@@ -182,10 +182,9 @@
       const totalW = totalSlots * cw + Math.max(0, totalSlots - 1) * gap;
       let x = (this.W - totalW) / 2;
       const y = this.animalRowY();
-      // 뒷면 카드가 공개될 순서대로 배정되는 패스 보상(남은 쥐 카드 동전을 낮은 숫자부터)
-      const remainingRewards = (st.mouse || []).filter((m) => m.coins > 0).map((m) => m.coins);
+      // 각 카드 위치에 해당하는 패스 보상값(쥐 카드 숫자). 시작 카드(0번) 제외, 이미 가져갔어도 계속 표시.
+      const mouseNums = (st.mouse || []).map((m) => m.num);
       const bidding = st.phase === 'bidding' && !st.finished;
-      let hiddenSeq = 0;
       ctx.textAlign = 'center';
       for (let i = 0; i < totalSlots; i++) {
         // 아직 놓이지 않은 자리 → 카드와 동일한 크기의 빈 칸(점선)
@@ -223,10 +222,9 @@
         ctx.beginPath();
         ctx.arc(x + cw / 2, y + ch + 9, 5, 0, Math.PI * 2);
         ctx.fill();
-        // 패스 보상 안내 — 뒷면 카드 위에 공개 순서에 맞는 값으로 "리워드 🪙N"
-        if (bidding && !slot.faceUp) {
-          const reward = remainingRewards[hiddenSeq];
-          hiddenSeq += 1;
+        // 패스 보상 안내 — 시작 카드(0번) 제외, 각 카드 위치의 쥐 카드 값을 항상 표시
+        if (bidding && i >= 1) {
+          const reward = mouseNums[i - 1];
           if (reward > 0) {
             const label = `리워드 🪙${reward}`;
             ctx.font = '800 10px sans-serif';
@@ -421,7 +419,8 @@
       if (lr.discarded) {
         lines.push({ t: '전원 패스 — 자루 카드를 모두 버립니다', c: '#ffd7d7', f: '800 13px sans-serif' });
       } else {
-        lines.push({ t: `${lr.winnerName} 낙찰 · 🪙${lr.bid} 지불 → +${lr.pointsGained}점`, c: '#ffe9b0', f: '800 13px sans-serif' });
+        const gp = lr.pointsGained;
+        lines.push({ t: `${lr.winnerName} 낙찰 · 🪙${lr.bid} 지불 → ${gp >= 0 ? '+' : ''}${gp}점`, c: '#ffe9b0', f: '800 13px sans-serif' });
       }
       for (const g of (lr.passGains || [])) {
         lines.push({ t: `패스: ${g.name} +🪙${g.amount}`, c: '#9fe8ff', f: '700 12px sans-serif' });

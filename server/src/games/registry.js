@@ -4,8 +4,9 @@
  */
 const lexio = require('./lexio');
 const felicity = require('./felicity');
+const uno = require('./uno');
 
-const engines = { lexio, felicity };
+const engines = { lexio, felicity, uno };
 
 const DEFAULT_GAME = 'lexio';
 

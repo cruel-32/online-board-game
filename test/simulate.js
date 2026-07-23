@@ -184,4 +184,32 @@ for (const pc of [3, 4, 5]) {
   }
 }
 
+/* ---------- 10. 우노: 봇 자동 대전 (2/4/6인) ---------- */
+{
+  const { UnoGame, buildDeck } = require('../server/src/games/uno/game');
+  const { chooseBotMove } = require('../server/src/games/uno/bot');
+  assert.equal(buildDeck().length, 108, '우노 덱 108장');
+  for (const pc of [2, 4, 6]) {
+    for (let t = 0; t < 30; t++) {
+      const players = Array.from({ length: pc }, (_, i) => ({ id: 'p' + i, isBot: true }));
+      const g = new UnoGame(players);
+      for (const p of players) assert.equal(g.handOf(p.id).length, 7, '7장 시작');
+      assert(g.top().type === 'number', '시작 카드는 숫자');
+      let steps = 0;
+      while (!g.finished) {
+        const pid = g.currentActorId();
+        assert(pid, '진행 중이면 행동자 존재');
+        const mv = chooseBotMove(g, pid);
+        if (mv.kind === 'play') g.play(pid, mv.cardId, mv.color);
+        else if (mv.kind === 'draw') g.draw(pid);
+        else g.pass(pid);
+        assert(++steps < 100000, '무한 루프 없음');
+      }
+      assert(g.winnerId, '승자 존재');
+      assert.equal(g.handOf(g.winnerId).length, 0, '승자는 손패 0');
+    }
+    console.log(`✅ 우노 ${pc}인 봇 자동 대전 30판 완주`);
+  }
+}
+
 console.log('\n🎉 모든 테스트 통과');
