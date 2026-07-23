@@ -18,6 +18,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          script_stop: true
           script: |
             # 홈서버에 미리 git clone 되어 있는 프로젝트 디렉토리로 이동
             cd ~/lexio-online
