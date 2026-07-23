@@ -13,7 +13,7 @@ module.exports = {
     name: '펠리시티',
     minPlayers: 4,
     maxPlayers: 5,
-    settleDelay: 0,
+    settleDelay: 5000, // 마지막 라운드 결과(공개 카드·낙찰/패스 내역)를 충분히 본 뒤 최종 점수판을 띄운다
   },
 
   defaultOptions() { return {}; },
@@ -71,9 +71,11 @@ module.exports = {
       winnerId: lr.winnerId,
       winnerName: lr.winnerId ? nameOf(lr.winnerId) : null,
       bid: lr.bid,
+      pointsGained: lr.pointsGained || 0,
       kept: lr.kept,
       removed: lr.removed,
       discarded: lr.discarded,
+      passGains: (lr.passGains || []).map((g) => ({ name: nameOf(g.id), amount: g.amount })),
     } : null;
 
     let scores = null;

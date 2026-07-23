@@ -367,12 +367,22 @@ input, select {
 }
 
 /* ================= 펠리시티 HUD 컨트롤 ================= */
-.fel-controls { display: flex; flex-direction: column; gap: 10px; align-items: flex-end; }
+.fel-controls { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.fel-controls-left { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .fel-hint { text-align: center; font-size: 12px; color: #b7aec5; background: rgba(0,0,0,0.35);
   border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 8px 10px; line-height: 1.4; }
-.fel-bidbox { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,215,130,0.25);
-  border-radius: 10px; padding: 8px; text-align: center; }
-.fel-bid-row { display: flex; align-items: center; gap: 8px; justify-content: center; }
-.fel-bid-row .btn.tiny { padding: 4px 10px; font-size: 15px; }
-.fel-bid-amt { min-width: 34px; font-size: 20px; font-weight: 800; color: #ffd76e; }
-.fel-bid-info { margin-top: 6px; font-size: 10px; color: #9a93a8; }
+/* 금액 설정 박스: 입찰 버튼(hud-btn-main, 76px)과 동일 너비 · 상하 화살표로 증감 */
+.fel-bidbox {
+  width: 76px; box-sizing: border-box; text-align: center;
+  background: rgba(0,0,0,0.4); border: 1px solid rgba(255,215,130,0.3);
+  border-radius: 10px; padding: 5px 6px;
+}
+.fel-bid-arrow {
+  display: block; width: 100%; border: none; cursor: pointer;
+  background: rgba(255,215,130,0.14); color: #ffd76e;
+  font-size: 13px; line-height: 1; padding: 4px 0; border-radius: 6px;
+}
+.fel-bid-arrow:active { transform: scale(0.94); }
+.fel-bid-arrow:disabled { opacity: 0.35; cursor: default; }
+.fel-bid-amt { display: block; font-size: 22px; font-weight: 800; color: #ffd76e; padding: 3px 0; }
+.fel-bid-info { width: 84px; text-align: center; font-size: 10px; color: #9a93a8; line-height: 1.3; }

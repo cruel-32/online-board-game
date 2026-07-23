@@ -70,6 +70,7 @@ class FelicityGame {
     this.row = []; // { ownerId, card, faceUp }
     this.bids = new Map(this.playerIds.map((id) => [id, 0]));
     this.passed = new Set();
+    this.passGains = []; // 이번 라운드에 패스로 받은 보상 [{ id, amount }]
     this.highBid = 0;
     this.highBidder = null;
     if (!skipRefill) this._refill();
@@ -136,10 +137,13 @@ class FelicityGame {
     this.bids.set(pid, 0);
     // 남은 최저 숫자 쥐 카드의 동전을 가져온다.
     const i = this.mouseCoins.findIndex((c) => c > 0);
+    let gained = 0;
     if (i !== -1) {
-      this.coins.set(pid, this.coins.get(pid) + this.mouseCoins[i]);
+      gained = this.mouseCoins[i];
+      this.coins.set(pid, this.coins.get(pid) + gained);
       this.mouseCoins[i] = 0;
     }
+    this.passGains.push({ id: pid, amount: gained });
     this._revealNextHidden();
     this._advanceTurn();
     return this._checkResolve();
@@ -160,17 +164,20 @@ class FelicityGame {
     const bag = this.row.map((s) => s.card);
     const { removed, kept } = core.resolveDogs(bag);
     this.collected.get(winnerId).push(...kept);
+    const pointsGained = kept.reduce((s, c) => s + core.cardPoints(c), 0);
     this.lastResult = {
-      winnerId, bid: this.highBid,
+      winnerId, bid: this.highBid, pointsGained,
       kept: kept.slice(), removed: removed.slice(), discarded: false,
+      passGains: this.passGains.slice(),
     };
     this._finishOrNext({ keepStart: false, skipRefill: false });
   }
 
   _discardRound() {
     this.lastResult = {
-      winnerId: null, bid: 0,
+      winnerId: null, bid: 0, pointsGained: 0,
       kept: [], removed: this.row.map((s) => s.card), discarded: true,
+      passGains: this.passGains.slice(),
     };
     // 시작 플레이어 유지, 다음 라운드 코인 미적재
     this._finishOrNext({ keepStart: true, skipRefill: true });

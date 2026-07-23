@@ -47,7 +47,7 @@
       if (this.selected && !state.hand.some((c) => c.id === this.selected)) this.selected = null;
       // 지난 라운드 결과 배너를 잠시 표시
       const key = state.lastResult ? JSON.stringify(state.lastResult) + '@' + state.round : '';
-      if (key && key !== this.lastResultKey) { this.lastResultKey = key; this.lastResultUntil = performance.now() + 4000; }
+      if (key && key !== this.lastResultKey) { this.lastResultKey = key; this.lastResultUntil = performance.now() + 7000; }
     },
 
     isMyTurn() { return this.state && this.state.turnId === this.myId && !this.state.finished; },
@@ -189,6 +189,10 @@
       const totalW = row.length * cw + Math.max(0, row.length - 1) * gap;
       let x = (this.W - totalW) / 2;
       const y = this.animalRowY();
+      // 패스 시 받는 보상(남은 최저 숫자 쥐 카드 동전) + 패스 때 공개되는 첫 뒷면 카드
+      const passReward = ((st.mouse || []).find((m) => m.coins > 0) || {}).coins || 0;
+      const revealIdx = row.findIndex((s) => !s.faceUp);
+      const bidding = st.phase === 'bidding' && !st.finished;
       ctx.textAlign = 'center';
       for (let i = 0; i < row.length; i++) {
         const slot = row[i];
@@ -205,15 +209,25 @@
           ctx.font = '22px sans-serif';
           ctx.fillText('🐾', x + cw / 2, y + ch / 2 + 8);
         }
-        // 소유자 색 점 + 자루/시작 표시(i===0)
+        // 카드 위: 누가 낸 카드인지 닉네임(소유자 색)
+        ctx.fillStyle = ownerColor;
+        ctx.font = '700 10px sans-serif';
+        ctx.fillText((this._nameOf(slot.ownerId) || '').slice(0, 5), x + cw / 2, y - 5);
+        // 소유자 색 점
         ctx.fillStyle = ownerColor;
         ctx.beginPath();
         ctx.arc(x + cw / 2, y + ch + 9, 5, 0, Math.PI * 2);
         ctx.fill();
-        if (i === 0) {
-          ctx.fillStyle = '#c98a2e';
-          ctx.font = '700 10px sans-serif';
-          ctx.fillText('자루', x + cw / 2, y - 6);
+        // 패스하면 이 카드가 공개되고 보상을 받는다는 안내(공개될 첫 뒷면 카드 위)
+        if (bidding && i === revealIdx) {
+          const label = passReward > 0 ? `패스→공개 🪙${passReward}` : '패스→공개';
+          ctx.font = '800 10px sans-serif';
+          const bw = ctx.measureText(label).width + 14;
+          const by = y - 20;
+          ctx.fillStyle = 'rgba(80,45,10,0.92)';
+          this.roundRect(ctx, x + cw / 2 - bw / 2, by - 11, bw, 16, 8); ctx.fill();
+          ctx.fillStyle = '#ffe0a0';
+          ctx.fillText(label, x + cw / 2, by);
         }
         x += cw + gap;
       }
@@ -369,29 +383,90 @@
       }
     },
 
-    // 지난 라운드 결과 배너
+    // 지난 라운드 결과 — 공개된 카드 + 낙찰/패스 내역을 한눈에 보이는 패널로 표시
     drawLastResult(ctx) {
       if (this.lastResultUntil < this.anim) return;
       const lr = this.state.lastResult;
       if (!lr) return;
-      let text;
-      if (lr.discarded) text = '전원 패스 — 자루의 카드를 모두 버립니다';
-      else {
-        const dog = lr.removed.find((c) => c.kind === 'dog');
-        const cat = lr.removed.find((c) => c.kind === 'cat');
-        const dogNote = dog ? ` (개가 ${cat ? (cat.value > 0 ? '+' : '') + cat.value + ' 고양이를 쫓아냄' : '자기들끼리 놀아 사라짐'})` : '';
-        text = `지난 라운드: ${lr.winnerName}님이 ${lr.bid} 코인에 획득${dogNote}`;
+
+      // 이번 라운드에 등장한 자루 카드(획득 kept / 제거 removed)
+      const cards = [
+        ...(lr.kept || []).map((c) => ({ card: c, kept: true })),
+        ...(lr.removed || []).map((c) => ({ card: c, kept: false })),
+      ];
+      const tw = 34, th = Math.round(tw * 1.4), cgap = 6;
+      const cardsW = cards.length ? cards.length * tw + (cards.length - 1) * cgap : 0;
+
+      // 텍스트 라인
+      const lines = [];
+      if (lr.discarded) {
+        lines.push({ t: '전원 패스 — 자루 카드를 모두 버립니다', c: '#ffd7d7', f: '800 13px sans-serif' });
+      } else {
+        lines.push({ t: `${lr.winnerName} 낙찰 · 🪙${lr.bid} 지불 → +${lr.pointsGained}점`, c: '#ffe9b0', f: '800 13px sans-serif' });
       }
+      const pg = (lr.passGains || []);
+      if (pg.length) {
+        lines.push({ t: '패스 보상  ' + pg.map((g) => `${g.name} +🪙${g.amount}`).join('   '), c: '#9fe8ff', f: '700 11px sans-serif' });
+      }
+
+      // 패널 크기 계산
       ctx.save();
-      ctx.font = '800 14px sans-serif';
       ctx.textAlign = 'center';
-      const w = ctx.measureText(text).width + 28;
-      const x = this.W / 2, y = this.animalRowY() - 26;
-      ctx.fillStyle = 'rgba(20,30,20,0.9)';
-      ctx.strokeStyle = 'rgba(255,215,130,0.5)'; ctx.lineWidth = 1;
-      this.roundRect(ctx, x - w / 2, y - 16, w, 24, 12); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = '#ffe9b0';
-      ctx.fillText(text, x, y);
+      let contentW = cardsW;
+      ctx.font = '800 13px sans-serif';
+      contentW = Math.max(contentW, ctx.measureText('지난 라운드 결과').width);
+      for (const ln of lines) { ctx.font = ln.f; contentW = Math.max(contentW, ctx.measureText(ln.t).width); }
+      const padX = 16;
+      const panelW = Math.min(this.W - 12, contentW + padX * 2);
+      const titleH = 20, cardsH = cards.length ? th + 10 : 0, lineH = 18;
+      const panelH = 10 + titleH + cardsH + lines.length * lineH + 10;
+      const cx = this.W / 2;
+      let top = this.H * 0.54 - panelH / 2;
+      top = Math.max(60, Math.min(top, this.H - panelH - 10));
+      const x0 = cx - panelW / 2;
+
+      // 배경
+      const pulse = 0.6 + 0.4 * Math.sin(this.anim / 400);
+      ctx.shadowColor = 'rgba(255,215,130,0.55)'; ctx.shadowBlur = 18 * pulse;
+      ctx.fillStyle = 'rgba(16,24,16,0.96)';
+      this.roundRect(ctx, x0, top, panelW, panelH, 14); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,215,130,0.6)'; ctx.lineWidth = 1.5;
+      this.roundRect(ctx, x0, top, panelW, panelH, 14); ctx.stroke();
+
+      let y = top + 10 + 14;
+      ctx.fillStyle = '#ffd76e'; ctx.font = '800 13px sans-serif';
+      ctx.fillText('지난 라운드 결과', cx, y);
+      y += 6;
+
+      // 공개 카드 썸네일(kept=선명 / removed=반투명 + ✕)
+      if (cards.length) {
+        let cxx = cx - cardsW / 2;
+        const cyy = y + 4;
+        for (const it of cards) {
+          ctx.save();
+          if (!it.kept) ctx.globalAlpha = 0.5;
+          this.drawCard(ctx, cxx, cyy, tw, th, it.card);
+          if (!it.kept) {
+            ctx.strokeStyle = '#ff6b6b'; ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(cxx + 4, cyy + 4); ctx.lineTo(cxx + tw - 4, cyy + th - 4);
+            ctx.moveTo(cxx + tw - 4, cyy + 4); ctx.lineTo(cxx + 4, cyy + th - 4);
+            ctx.stroke();
+          }
+          ctx.restore();
+          cxx += tw + cgap;
+        }
+        y = cyy + th + 4;
+      }
+
+      // 텍스트 라인
+      ctx.textAlign = 'center';
+      for (const ln of lines) {
+        y += lineH - 3;
+        ctx.fillStyle = ln.c; ctx.font = ln.f;
+        ctx.fillText(ln.t, cx, y);
+      }
       ctx.restore();
     },
 
@@ -419,6 +494,10 @@
     _colorOf(id) {
       const p = (this.state.players || []).find((x) => x.id === id);
       return p ? p.color : null;
+    },
+    _nameOf(id) {
+      const p = (this.state.players || []).find((x) => x.id === id);
+      return p ? p.name : '';
     },
     _lighten(hex, f) { return this._mix(hex, '#ffffff', f); },
     _darken(hex, f) { return this._mix(hex, '#000000', f); },

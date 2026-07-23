@@ -9,6 +9,9 @@
   const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
   const HUD_HTML = `
+    <div class="hud-left">
+      <div id="fel-controls-left" class="fel-controls-left"></div>
+    </div>
     <div class="hud-right">
       <button id="fel-rules" class="btn hud-btn">게임룰</button>
       <div id="fel-controls" class="fel-controls"></div>
@@ -118,7 +121,9 @@
     /* ---------- HUD 컨트롤(단계/차례에 따라 갱신) ---------- */
     refreshControls() {
       const el = $('fel-controls');
+      const elL = $('fel-controls-left');
       if (!el || !this.state) return;
+      if (elL) elL.innerHTML = ''; // 기본: 좌측 컨트롤 비움(패스는 경매 차례에만)
       const s = this.state;
       const myTurn = s.turnId === s.you && !s.finished;
       const me = (s.players || []).find((p) => p.id === s.you);
@@ -143,17 +148,17 @@
         if (this.bidAmount < min) this.bidAmount = min;
         if (this.bidAmount > max) this.bidAmount = max;
         const canBid = max >= min;
+        // 입찰 컨트롤(우측): 금액 설정 박스(상하 화살표) + 입찰 버튼 — 박스 너비를 입찰 버튼과 동일하게
         el.innerHTML = `
           <div class="fel-bidbox">
-            <div class="fel-bid-row">
-              <button id="fel-bid-minus" class="btn tiny">−</button>
-              <span id="fel-bid-amt" class="fel-bid-amt">${canBid ? this.bidAmount : '-'}</span>
-              <button id="fel-bid-plus" class="btn tiny">+</button>
-            </div>
-            <div class="fel-bid-info">현재 최고 ${s.highBid} · 내 코인 ${me ? me.coins : '?'}</div>
+            <button id="fel-bid-plus" class="fel-bid-arrow"${canBid ? '' : ' disabled'}>▲</button>
+            <span id="fel-bid-amt" class="fel-bid-amt">${canBid ? this.bidAmount : '-'}</span>
+            <button id="fel-bid-minus" class="fel-bid-arrow"${canBid ? '' : ' disabled'}>▼</button>
           </div>
-          <button id="fel-bid" class="btn hud-btn-main gold"${canBid ? '' : ' disabled'}>입찰</button>
-          <button id="fel-pass" class="btn hud-btn-main pass">패스</button>`;
+          <div class="fel-bid-info">최고 ${s.highBid} · 내 ${me ? me.coins : '?'}</div>
+          <button id="fel-bid" class="btn hud-btn-main gold"${canBid ? '' : ' disabled'}>입찰</button>`;
+        // 패스 버튼(좌측 하단)
+        if (elL) elL.innerHTML = `<button id="fel-pass" class="btn hud-btn-main pass">패스</button>`;
         if (canBid) {
           $('fel-bid-minus').addEventListener('click', () => { this.bidAmount = Math.max(min, this.bidAmount - 1); this.refreshControls(); });
           $('fel-bid-plus').addEventListener('click', () => { this.bidAmount = Math.min(max, this.bidAmount + 1); this.refreshControls(); });
@@ -161,7 +166,8 @@
             this.ctx.send({ type: 'game_action', action: { kind: 'bid', amount: this.bidAmount } });
           });
         }
-        $('fel-pass').addEventListener('click', () => {
+        const passBtn = $('fel-pass');
+        if (passBtn) passBtn.addEventListener('click', () => {
           this.ctx.send({ type: 'game_action', action: { kind: 'pass' } });
         });
       }
