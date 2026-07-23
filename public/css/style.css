@@ -158,11 +158,13 @@ input, select {
   display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
 }
 .hud-autopass {
-  pointer-events: auto; white-space: nowrap; cursor: pointer;
-  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 20px;
+  pointer-events: auto; cursor: pointer;
+  width: 76px; text-align: center; line-height: 1.35;
+  border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 16px;
   background: rgba(0, 0, 0, 0.4); color: #b7aec5;
-  padding: 7px 12px; font-size: 12px; font-weight: 700;
+  padding: 7px 6px; font-size: 12px; font-weight: 700;
 }
+.hud-autopass .ap-state { font-weight: 800; }
 .hud-autopass.on { background: linear-gradient(180deg, #3f7a4b, #2c5636); border-color: #7fc98e; color: #eafff0; }
 .hud-autopass:active { transform: scale(0.96); }
 .hud-secondary { display: flex; flex-direction: column; gap: 6px; }

@@ -12,7 +12,7 @@
 
   const HUD_HTML = `
     <div class="hud-left">
-      <button id="btn-autopass" class="hud-autopass" title="낼 수 있는 패가 없으면 자동으로 패스합니다">오토패스 OFF</button>
+      <button id="btn-autopass" class="hud-autopass" title="낼 수 있는 패가 없으면 자동으로 패스합니다">오토패스<br><span class="ap-state">OFF</span></button>
       <button id="btn-pass" class="btn hud-btn-main pass">패스</button>
     </div>
     <div class="hud-right">
@@ -175,7 +175,7 @@
 
       const apBtn = $('btn-autopass');
       const syncAutoPass = () => {
-        apBtn.textContent = '오토패스 ' + (this.autoPassEnabled ? 'ON' : 'OFF');
+        apBtn.innerHTML = '오토패스<br><span class="ap-state">' + (this.autoPassEnabled ? 'ON' : 'OFF') + '</span>';
         apBtn.classList.toggle('on', this.autoPassEnabled);
       };
       syncAutoPass();

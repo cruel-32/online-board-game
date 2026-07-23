@@ -57,7 +57,9 @@
       if (!this.state || this.state.phase !== 'placing' || !this.isMyTurn()) return;
       const r = this.canvas.getBoundingClientRect();
       const x = e.clientX - r.left, y = e.clientY - r.top;
-      for (const hr of this.handRects) {
+      // 겹친 카드는 나중에 그린(더 위에 있는) 카드가 우선 → 역순 탐색
+      for (let k = this.handRects.length - 1; k >= 0; k--) {
+        const hr = this.handRects[k];
         if (x >= hr.x && x <= hr.x + hr.w && y >= hr.y && y <= hr.y + hr.h) {
           this.selected = (this.selected === hr.id) ? null : hr.id;
           if (window.Sound) window.Sound.select();
@@ -73,9 +75,10 @@
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       ctx.clearRect(0, 0, this.W, this.H);
       this.drawBackground(ctx);
+      this.drawTable(ctx);
       this.drawMouseRow(ctx);
+      this.drawSeats(ctx);
       this.drawAnimalRow(ctx);
-      this.drawPlayers(ctx);
       this.drawHand(ctx);
       this.drawLastResult(ctx);
       if (this.isMyTurn()) this.drawTurnFrame(ctx);
@@ -87,6 +90,56 @@
       g.addColorStop(1, '#0d120e');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, this.W, this.H);
+    },
+
+    /* ---------- 레이아웃(렉시오와 동일한 원형 좌석 배치) ----------
+     * 상단: 쥐 카드 행 + 은행 / 그 아래 반원형 테이블에 다른 플레이어가 둘러앉고,
+     * 좌석 아래(테이블 중앙)에 자루(동물 카드 열), 화면 하단에 내 손패를 둔다.
+     */
+    seatCenter() {
+      const cx = this.W / 2;
+      const avatarR = 18;
+      const topReserve = 92;                       // 쥐 카드 행 + 은행이 차지하는 상단 높이
+      const ry = Math.min(this.H * 0.12, 90);
+      const cy = topReserve + avatarR + 6 + ry;    // 가장 높은 아바타가 상단 영역을 침범하지 않도록
+      const rx = Math.min(this.W * 0.40, 330);
+      return { cx, cy, rx, ry, avatarR };
+    },
+
+    // 다른 플레이어 좌석: 왼쪽(180°)→오른쪽(0°) 반원 호에 균등 배치 (렉시오와 동일)
+    seatPositions() {
+      const st = this.state;
+      const others = (st.players || []).filter((p) => p.id !== this.myId);
+      const n = others.length;
+      const { cx, cy, rx, ry } = this.seatCenter();
+      return others.map((p, i) => {
+        const a = Math.PI * (1 - (i + 1) / (n + 1));
+        return { player: p, x: cx + Math.cos(a) * rx, y: cy - Math.sin(a) * ry };
+      });
+    },
+
+    // 자루(동물 카드 열)의 세로 시작 y — 좌석 아바타 바로 아래(테이블 중앙)
+    animalRowY() {
+      return this.seatCenter().cy + 64;
+    },
+
+    // 좌석을 감싸는 은은한 원형 테이블 — "둘러앉은" 느낌을 준다
+    drawTable(ctx) {
+      const sc = this.seatCenter();
+      const cx = sc.cx, cy = sc.cy + 30;
+      const rx = Math.min(this.W * 0.42, 340);
+      const ry = Math.min(this.H * 0.20, rx);
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.beginPath(); ctx.ellipse(cx, cy + 8, rx + 10, ry + 8, 0, 0, Math.PI * 2); ctx.fill();
+      const felt = ctx.createRadialGradient(cx, cy - ry * 0.3, 20, cx, cy, rx);
+      felt.addColorStop(0, '#1e5c38');
+      felt.addColorStop(1, '#0d3520');
+      ctx.fillStyle = felt;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,215,130,0.18)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.82, ry * 0.8, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
     },
 
     roundRect(ctx, x, y, w, h, r) {
@@ -106,7 +159,7 @@
       const cw = 44, ch = 34, gap = 8;
       const totalW = mice.length * cw + (mice.length - 1) * gap;
       let x = (this.W - totalW) / 2;
-      const y = 12;
+      const y = 34; // 상단 HUD(방 이름·나가기·위젯)와 겹치지 않도록 아래로 내림
       ctx.textAlign = 'center';
       for (const m of mice) {
         ctx.fillStyle = 'rgba(255,255,255,0.06)';
@@ -121,11 +174,11 @@
         ctx.fillText('🪙' + m.coins, x + cw / 2, y + 29);
         x += cw + gap;
       }
-      // 은행
-      ctx.fillStyle = '#9a93a8';
+      // 은행 — 쥐 카드 행 아래 가운데(상단 HUD·은행 겹침 방지)
+      ctx.fillStyle = '#ffd76e';
       ctx.font = '700 12px sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(`은행 🪙${st.bank}`, (this.W + totalW) / 2 + 14, y + 22);
+      ctx.textAlign = 'center';
+      ctx.fillText(`은행 🪙${st.bank}`, this.W / 2, y + ch + 16);
     },
 
     // 동물 카드 열(자루)
@@ -135,7 +188,7 @@
       const cw = this.H < 420 ? 46 : 56, ch = Math.round(cw * 1.4), gap = 10;
       const totalW = row.length * cw + Math.max(0, row.length - 1) * gap;
       let x = (this.W - totalW) / 2;
-      const y = this.H * 0.30;
+      const y = this.animalRowY();
       ctx.textAlign = 'center';
       for (let i = 0; i < row.length; i++) {
         const slot = row[i];
@@ -204,64 +257,97 @@
       }
     },
 
-    // 플레이어 배지 행
-    drawPlayers(ctx) {
+    // 다른 플레이어 좌석 — 렉시오처럼 원형 테이블에 둘러앉은 아바타로 그린다
+    drawSeats(ctx) {
       const st = this.state;
-      const players = st.players || [];
-      const bw = 118, bh = 46, gap = 8;
-      const totalW = players.length * bw + (players.length - 1) * gap;
-      let x = Math.max(8, (this.W - totalW) / 2);
-      const y = this.H * 0.30 + (this.H < 420 ? 46 : 56) * 1.4 + 26;
-      for (const p of players) {
+      const seats = this.seatPositions();
+      for (const s of seats) {
+        const p = s.player;
         const isTurn = st.turnId === p.id && !st.finished;
         const color = core.COLOR_HEX[p.color] || '#888';
-        ctx.fillStyle = isTurn ? 'rgba(255,215,110,0.16)' : 'rgba(255,255,255,0.05)';
-        ctx.strokeStyle = isTurn ? '#ffd76e' : 'rgba(255,255,255,0.12)';
-        ctx.lineWidth = isTurn ? 2 : 1;
-        this.roundRect(ctx, x, y, bw, bh, 9); ctx.fill(); ctx.stroke();
-        // 색 칩
-        ctx.fillStyle = color;
-        this.roundRect(ctx, x + 7, y + 7, 10, 10, 3); ctx.fill();
-        // 이름 + 선
-        ctx.textAlign = 'left';
-        ctx.fillStyle = isTurn ? '#ffe9b0' : '#d8d2e4';
-        ctx.font = '700 12px sans-serif';
-        ctx.fillText((p.name || '').slice(0, 6) + (p.isStart ? ' ⭐' : ''), x + 22, y + 16);
-        // 코인 / 입찰 / 상태
-        ctx.font = '700 11px sans-serif';
-        ctx.fillStyle = '#ffd76e';
-        const coinTxt = p.coins == null ? '🪙?' : '🪙' + p.coins;
-        ctx.fillText(coinTxt, x + 8, y + 33);
-        ctx.fillStyle = '#9fe8ff';
-        ctx.fillText('🐱' + p.collectedCount, x + 8, y + 43);
-        ctx.textAlign = 'right';
-        if (p.passed) {
-          ctx.fillStyle = '#ff9a9a'; ctx.font = '800 11px sans-serif';
-          ctx.fillText('패스', x + bw - 8, y + 33);
-        } else if (p.bid > 0) {
-          ctx.fillStyle = '#ffe9b0'; ctx.font = '800 12px sans-serif';
-          ctx.fillText('입찰 ' + p.bid, x + bw - 8, y + 33);
+        const x = s.x, y = s.y;
+
+        // 차례 글로우
+        if (isTurn) {
+          ctx.save();
+          ctx.shadowColor = '#ffd76e'; ctx.shadowBlur = 16;
+          ctx.fillStyle = 'rgba(255,215,110,0.25)';
+          ctx.beginPath(); ctx.arc(x, y - 8, 24, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
         }
-        x += bw + gap;
+        // 입찰/패스 배지(아바타 위)
+        if (p.passed) {
+          ctx.fillStyle = 'rgba(120,40,55,0.9)';
+          this.roundRect(ctx, x - 20, y - 36, 40, 16, 8); ctx.fill();
+          ctx.fillStyle = '#ffc9c9'; ctx.font = '800 10px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('패스', x, y - 24);
+        } else if (p.bid > 0) {
+          ctx.fillStyle = 'rgba(130,95,20,0.92)';
+          this.roundRect(ctx, x - 26, y - 36, 52, 16, 8); ctx.fill();
+          ctx.fillStyle = '#ffe9b0'; ctx.font = '800 10px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText('입찰 ' + p.bid, x, y - 24);
+        }
+        // 아바타(플레이어 색)
+        ctx.fillStyle = this._darken(color, 0.35);
+        ctx.strokeStyle = isTurn ? '#ffd76e' : color;
+        ctx.lineWidth = isTurn ? 2.5 : 2;
+        ctx.beginPath(); ctx.arc(x, y - 8, 18, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#f4efe4'; ctx.font = '700 14px sans-serif';
+        ctx.fillText(p.isBot ? '🤖' : (p.name || '?').slice(0, 1), x, y - 3);
+        // 시작(선) 표시
+        if (p.isStart) {
+          ctx.font = '13px sans-serif';
+          ctx.fillText('⭐', x + 16, y - 16);
+        }
+        // 이름
+        ctx.font = '600 11px sans-serif';
+        ctx.fillStyle = isTurn ? '#ffe9b0' : '#d8d2e4';
+        ctx.fillText((p.name || '').slice(0, 7), x, y + 17);
+        // 코인 · 고양이 배지
+        const badgeY = y + 24;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        this.roundRect(ctx, x - 34, badgeY, 68, 16, 8); ctx.fill();
+        ctx.font = '700 10px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = '#ffd76e';
+        ctx.fillText(p.coins == null ? '🪙?' : '🪙' + p.coins, x - 30, badgeY + 12);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#9fe8ff';
+        ctx.fillText('🐱' + p.collectedCount, x + 30, badgeY + 12);
+        ctx.textAlign = 'center';
       }
     },
 
-    // 내 손패(배치 단계에 클릭 선택)
+    // 내 손패(배치 단계에 클릭 선택). 7장 이상이면 두 줄로 나눠 카드 겹침을 줄인다.
     drawHand(ctx) {
       this.handRects = [];
       const st = this.state;
       const hand = st.hand || [];
       if (!hand.length) return;
       const cw = this.H < 420 ? 40 : 48, ch = Math.round(cw * 1.4), gap = 6;
-      const availW = this.W - 160;
-      const spacing = hand.length > 1 ? Math.min(cw + gap, (availW - cw) / (hand.length - 1)) : 0;
-      const totalW = cw + spacing * (hand.length - 1);
-      let x0 = (this.W - 70 - totalW) / 2;
-      const y = this.H - ch - 12;
+      // 세로 모드에서 7장 이상이면 두 줄로(가로 모드는 폭이 넓어 한 줄로도 겹치지 않음)
+      const twoRows = this.H > this.W && hand.length >= 7;
+      const c0 = twoRows ? Math.ceil(hand.length / 2) : hand.length; // 앞줄(하단, 더 많은 쪽)
+      const c1 = twoRows ? hand.length - c0 : 0;                     // 뒷줄(앞줄 위쪽)
+      const maxCount = Math.max(c0, c1, 1);
+      const availW = this.W - 160; // 우측 하단 컨트롤(입찰/패스) 영역을 비워둔다
+      const spacing = maxCount > 1 ? Math.min(cw + gap, (availW - cw) / (maxCount - 1)) : 0;
+      const rowGap = 8;
+      const y0 = this.H - ch - 12;                    // 앞줄(하단)
+      const y1 = twoRows ? y0 - ch - rowGap : y0;     // 뒷줄(위쪽)
       const canPlace = st.phase === 'placing' && this.isMyTurn();
+      const xFor = (count) => {
+        const totalW = cw + spacing * (Math.max(count, 1) - 1);
+        return (this.W - 70 - totalW) / 2;            // 우측 컨트롤 폭 보정 후 중앙 정렬
+      };
+      const x0start = xFor(c0), x1start = xFor(c1);
       for (let i = 0; i < hand.length; i++) {
         const c = hand[i];
-        const x = x0 + i * spacing;
+        const row = (twoRows && i >= c0) ? 1 : 0;
+        const col = row === 0 ? i : i - c0;
+        const x = (row === 0 ? x0start : x1start) + col * spacing;
+        const y = row === 0 ? y0 : y1;
         const sel = this.selected === c.id;
         ctx.save();
         if (!canPlace) ctx.globalAlpha = 0.75;
@@ -273,12 +359,13 @@
         ctx.restore();
         this.handRects.push({ id: c.id, x, y: y - (sel ? 12 : 0), w: cw, h: ch });
       }
-      // 내 정보(좌하단)
+      // 내 정보(좌하단) — 손패 맨 윗줄 위에 표시
       const me = (st.players || []).find((p) => p.id === this.myId);
       if (me) {
         ctx.textAlign = 'left';
         ctx.fillStyle = '#ffd76e'; ctx.font = '700 12px sans-serif';
-        ctx.fillText(`${me.name}  🪙${me.coins}`, 10, y - 8);
+        const info = `${me.name}  🪙${me.coins}  🐱${me.collectedCount}` + (me.passed ? '  · 패스' : '');
+        ctx.fillText(info, 10, (twoRows ? y1 : y0) - 8);
       }
     },
 
@@ -299,7 +386,7 @@
       ctx.font = '800 14px sans-serif';
       ctx.textAlign = 'center';
       const w = ctx.measureText(text).width + 28;
-      const x = this.W / 2, y = this.H * 0.30 - 26;
+      const x = this.W / 2, y = this.animalRowY() - 26;
       ctx.fillStyle = 'rgba(20,30,20,0.9)';
       ctx.strokeStyle = 'rgba(255,215,130,0.5)'; ctx.lineWidth = 1;
       this.roundRect(ctx, x - w / 2, y - 16, w, 24, 12); ctx.fill(); ctx.stroke();
@@ -320,16 +407,13 @@
 
     bubbleAnchor(id) {
       if (!this.state || !this.canvas) return null;
-      const players = this.state.players || [];
-      const idx = players.findIndex((p) => p.id === id);
-      if (idx === -1) return null;
-      const bw = 118, gap = 8;
-      const totalW = players.length * bw + (players.length - 1) * gap;
-      const x0 = Math.max(8, (this.W - totalW) / 2);
-      const cx = x0 + idx * (bw + gap) + bw / 2;
-      const y = this.H * 0.30 + (this.H < 420 ? 46 : 56) * 1.4 + 26;
       const rect = this.canvas.getBoundingClientRect();
-      return { x: rect.left + cx, y: rect.top + y };
+      if (id === this.myId) {
+        return { x: rect.left + this.W / 2, y: rect.top + this.H - 130 };
+      }
+      const seat = this.seatPositions().find((s) => s.player.id === id);
+      if (!seat) return null;
+      return { x: rect.left + seat.x, y: rect.top + seat.y - 34 };
     },
 
     _colorOf(id) {
