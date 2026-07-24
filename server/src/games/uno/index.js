@@ -65,6 +65,7 @@ module.exports = {
       drawCount: game.deck.length,
       hand: game.handOf(viewerId) || [],
       justDrewCardId: justDrewMine,          // 방금 뽑은(낼지 선택할) 카드
+      penalty: game.penalty,                 // { byId, targetId, count, seq } — 드로우 페널티 애니메이션용
       lastAction: game.lastAction ? { name: nameOf(game.lastAction.pid), text: game.lastAction.text } : null,
       finished: game.finished,
       winnerId: game.winnerId,

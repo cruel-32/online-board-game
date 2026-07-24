@@ -41,12 +41,12 @@
       ctx.closePath();
     },
 
+    // 렉시오와 동일한 원형 좌석/테이블 배치
     seatCenter() {
-      const cx = this.W / 2, topReserve = 30, avatarR = 18;
-      const ry = Math.min(this.H * 0.13, 96);
-      const cy = topReserve + avatarR + 6 + ry;
+      const cx = this.W / 2, cy = this.H * 0.47;
       const rx = Math.min(this.W * 0.40, 330);
-      return { cx, cy, rx, ry, avatarR };
+      const ry = Math.min(this.H * 0.30, rx);
+      return { cx, cy, rx, ry };
     },
     seatPositions() {
       const others = (this.state.players || []).filter((p) => p.id !== this.myId);
@@ -57,7 +57,7 @@
         return { player: p, x: cx + Math.cos(a) * rx, y: cy - Math.sin(a) * ry };
       });
     },
-    centerY() { return this.seatCenter().cy + 70; },
+    centerY() { return this.H * 0.47; },
 
     render() {
       const ctx = this.ctx;
@@ -73,24 +73,31 @@
 
     drawBackground(ctx) {
       const g = ctx.createRadialGradient(this.W / 2, this.H * 0.2, 40, this.W / 2, this.H * 0.5, this.W * 0.8);
-      g.addColorStop(0, '#26302a'); g.addColorStop(1, '#0d120e');
+      g.addColorStop(0, '#2a2440'); g.addColorStop(1, '#0b0a10');
       ctx.fillStyle = g; ctx.fillRect(0, 0, this.W, this.H);
+      const spotRx = this.W * 0.42, spotRy = Math.min(this.H * 0.34, spotRx);
+      ctx.save(); ctx.globalAlpha = 0.05; ctx.fillStyle = '#ffd76e';
+      ctx.beginPath(); ctx.ellipse(this.W / 2, this.H * 0.48, spotRx, spotRy, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     },
 
+    // 렉시오와 동일한 카지노풍 원형 테이블(나무 테두리 + 펠트)
     drawTable(ctx) {
-      const sc = this.seatCenter();
-      const cx = sc.cx, cy = sc.cy + 34;
-      const rx = Math.min(this.W * 0.44, 350), ry = Math.min(this.H * 0.22, rx);
-      ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.beginPath(); ctx.ellipse(cx, cy + 8, rx + 10, ry + 8, 0, 0, Math.PI * 2); ctx.fill();
+      const cx = this.W / 2, cy = this.H * 0.47;
+      const rx = Math.min(this.W * 0.34, 300);
+      const ry = Math.min(this.H * 0.27, rx);
+      ctx.fillStyle = '#1c1206';
+      ctx.beginPath(); ctx.ellipse(cx, cy + 10, rx + 16, ry + 14, 0, 0, Math.PI * 2); ctx.fill();
+      const rim = ctx.createLinearGradient(cx, cy - ry, cx, cy + ry);
+      rim.addColorStop(0, '#7a4a22'); rim.addColorStop(1, '#3d2410');
+      ctx.fillStyle = rim;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx + 16, ry + 12, 0, 0, Math.PI * 2); ctx.fill();
       const felt = ctx.createRadialGradient(cx, cy - ry * 0.3, 20, cx, cy, rx);
       felt.addColorStop(0, '#1e5c38'); felt.addColorStop(1, '#0d3520');
       ctx.fillStyle = felt;
       ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,215,130,0.18)'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.82, ry * 0.8, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
+      ctx.strokeStyle = 'rgba(255, 215, 130, 0.25)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.8, ry * 0.76, 0, 0, Math.PI * 2); ctx.stroke();
     },
 
     posBadge(ctx, x, y, text, bg) {

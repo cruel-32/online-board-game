@@ -41,6 +41,25 @@
       this.myId = state.you;
       // 내 손패에 없는 와일드 선택은 해제
       if (this.wildPending && !state.hand.some((c) => c.id === this.wildPending)) this.wildPending = null;
+      // 드로우 페널티가 새로 발생하면(seq 변화) 카드가 날아가는 애니메이션 시작
+      const pen = state.penalty;
+      if (pen && pen.seq && pen.seq !== this._penaltySeqSeen) {
+        this._penaltySeqSeen = pen.seq;
+        this.startPenaltyAnim(pen);
+      }
+    },
+
+    // 드로우 카드(+2/+4) 페널티: 뽑기 더미에서 대상 플레이어 좌석으로 카드가 날아가는 애니메이션
+    startPenaltyAnim(pen) {
+      this._penaltyAnim = { targetId: pen.targetId, count: pen.count, byId: pen.byId, start: performance.now(), dur: 220 };
+      if (window.Sound && window.Sound.select) window.Sound.select();
+    },
+
+    // 대상 좌석의 화면 좌표(나 자신은 하단 손패 중앙)
+    _seatXY(id) {
+      if (id === this.myId) return { x: this.W / 2, y: this.H - 60 };
+      const seat = this.seatPositions().find((s) => s.player.id === id);
+      return seat ? { x: seat.x, y: seat.y - 8 } : null;
     },
 
     isMyTurn() { return this.state && this.state.turnId === this.myId && !this.state.finished; },
@@ -115,6 +134,7 @@
       this.drawCenter(ctx);
       this.drawHand(ctx);
       this.drawLastAction(ctx);
+      this.drawPenaltyAnim(ctx);
       if (this.isMyTurn() && !this.wildPending) this.drawTurnFrame(ctx);
       if (this.wildPending) this.drawWildPicker(ctx);
     },
@@ -123,6 +143,10 @@
       const g = ctx.createRadialGradient(this.W / 2, this.H * 0.2, 40, this.W / 2, this.H * 0.5, this.W * 0.8);
       g.addColorStop(0, '#2a2440'); g.addColorStop(1, '#0b0a10');
       ctx.fillStyle = g; ctx.fillRect(0, 0, this.W, this.H);
+      const spotRx = this.W * 0.42, spotRy = Math.min(this.H * 0.34, spotRx);
+      ctx.save(); ctx.globalAlpha = 0.05; ctx.fillStyle = '#ffd76e';
+      ctx.beginPath(); ctx.ellipse(this.W / 2, this.H * 0.48, spotRx, spotRy, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     },
 
     roundRect(ctx, x, y, w, h, r) {
@@ -135,13 +159,12 @@
       ctx.closePath();
     },
 
+    // 렉시오와 동일한 원형 좌석/테이블 배치
     seatCenter() {
-      const cx = this.W / 2;
-      const topReserve = 40, avatarR = 18;
-      const ry = Math.min(this.H * 0.12, 88);
-      const cy = topReserve + avatarR + 6 + ry;
+      const cx = this.W / 2, cy = this.H * 0.47;
       const rx = Math.min(this.W * 0.40, 330);
-      return { cx, cy, rx, ry, avatarR };
+      const ry = Math.min(this.H * 0.30, rx);
+      return { cx, cy, rx, ry };
     },
     seatPositions() {
       const others = (this.state.players || []).filter((p) => p.id !== this.myId);
@@ -152,22 +175,25 @@
         return { player: p, x: cx + Math.cos(a) * rx, y: cy - Math.sin(a) * ry };
       });
     },
-    centerY() { return this.seatCenter().cy + 74; },
+    centerY() { return this.H * 0.47; },
 
+    // 렉시오와 동일한 카지노풍 원형 테이블(나무 테두리 + 펠트)
     drawTable(ctx) {
-      const sc = this.seatCenter();
-      const cx = sc.cx, cy = sc.cy + 40;
-      const rx = Math.min(this.W * 0.42, 340), ry = Math.min(this.H * 0.22, rx);
-      ctx.save();
-      ctx.fillStyle = 'rgba(0,0,0,0.25)';
-      ctx.beginPath(); ctx.ellipse(cx, cy + 8, rx + 10, ry + 8, 0, 0, Math.PI * 2); ctx.fill();
+      const cx = this.W / 2, cy = this.H * 0.47;
+      const rx = Math.min(this.W * 0.34, 300);
+      const ry = Math.min(this.H * 0.27, rx);
+      ctx.fillStyle = '#1c1206';
+      ctx.beginPath(); ctx.ellipse(cx, cy + 10, rx + 16, ry + 14, 0, 0, Math.PI * 2); ctx.fill();
+      const rim = ctx.createLinearGradient(cx, cy - ry, cx, cy + ry);
+      rim.addColorStop(0, '#7a4a22'); rim.addColorStop(1, '#3d2410');
+      ctx.fillStyle = rim;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx + 16, ry + 12, 0, 0, Math.PI * 2); ctx.fill();
       const felt = ctx.createRadialGradient(cx, cy - ry * 0.3, 20, cx, cy, rx);
-      felt.addColorStop(0, '#33305a'); felt.addColorStop(1, '#181530');
+      felt.addColorStop(0, '#1e5c38'); felt.addColorStop(1, '#0d3520');
       ctx.fillStyle = felt;
       ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.82, ry * 0.8, 0, 0, Math.PI * 2); ctx.stroke();
-      ctx.restore();
+      ctx.strokeStyle = 'rgba(255, 215, 130, 0.25)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx * 0.8, ry * 0.76, 0, 0, Math.PI * 2); ctx.stroke();
     },
 
     drawSeats(ctx) {
@@ -222,6 +248,20 @@
       ctx.restore();
       // 버림패 맨 위
       this.drawCard(ctx, cx - cw / 2, cy - ch / 2, cw, ch, st.discardTop);
+
+      // 드로우 카드(+2/+4)가 맨 위일 때: 페널티는 이미 적용됐고 색만 맞추면 됨을 명확히 안내
+      const topT = st.discardTop && st.discardTop.type;
+      if (topT === 'draw2' || topT === 'wild4') {
+        const label = '✓ 적용됨 · 색 맞추기';
+        ctx.font = '800 11px sans-serif'; ctx.textAlign = 'center';
+        const bw = ctx.measureText(label).width + 16;
+        const by = cy + ch / 2 + 14;
+        ctx.fillStyle = 'rgba(20,60,30,0.92)';
+        this.roundRect(ctx, cx - bw / 2, by - 11, bw, 18, 9); ctx.fill();
+        ctx.strokeStyle = COLOR_HEX[st.currentColor] || '#8f8'; ctx.lineWidth = 1.5;
+        this.roundRect(ctx, cx - bw / 2, by - 11, bw, 18, 9); ctx.stroke();
+        ctx.fillStyle = '#c9f5d6'; ctx.fillText(label, cx, by + 2);
+      }
 
       // 뽑기 더미(왼쪽) — 클릭 가능
       const dw = cw, dh = ch;
@@ -307,6 +347,51 @@
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       this.roundRect(ctx, x - w / 2, y - 13, w, 20, 10); ctx.fill();
       ctx.fillStyle = '#d8d2e4'; ctx.fillText(text, x, y + 1);
+    },
+
+    // 드로우 페널티 카드가 뽑기 더미에서 대상 좌석으로 역동적으로 날아가는 애니메이션
+    drawPenaltyAnim(ctx) {
+      const a = this._penaltyAnim;
+      if (!a) return;
+      const src = this.drawRect ? { x: this.drawRect.x + this.drawRect.w / 2, y: this.drawRect.y + this.drawRect.h / 2 }
+                                : { x: this.W / 2, y: this.centerY() };
+      const dst = this._seatXY(a.targetId);
+      if (!dst) { this._penaltyAnim = null; return; }
+      const now = performance.now();
+      const perCard = a.dur, stagger = 130;
+      const total = perCard + stagger * (a.count - 1) + 260; // 마지막 카드 도착 후 여운
+      const elapsed = now - a.start;
+      if (elapsed > total) { this._penaltyAnim = null; return; }
+      const cw = 24, ch = 34;
+      for (let i = 0; i < a.count; i++) {
+        const t0 = i * stagger;
+        let p = (elapsed - t0) / perCard;
+        if (p < 0) continue;
+        let alpha = 1;
+        if (p > 1) { alpha = Math.max(0, 1 - (p - 1) * 1.6); p = 1; }
+        const ease = 1 - Math.pow(1 - p, 3); // easeOutCubic
+        const x = src.x + (dst.x - src.x) * ease;
+        const y = src.y + (dst.y - src.y) * ease;
+        const scale = 0.8 + 0.25 * Math.sin(p * Math.PI); // 날아가며 살짝 커졌다 작아짐
+        const rot = (1 - p) * (i % 2 ? 0.5 : -0.5) + ease * 0.6;
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.translate(x, y); ctx.rotate(rot); ctx.scale(scale, scale);
+        ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3;
+        this.drawCardBack(ctx, -cw / 2, -ch / 2, cw, ch);
+        ctx.restore();
+      }
+      // 대상 좌석 위에 "+N" 강조
+      const badgeP = Math.min(1, elapsed / (perCard + stagger * (a.count - 1)));
+      if (badgeP > 0.3) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(1, (badgeP - 0.3) / 0.4) * (elapsed > total - 260 ? Math.max(0, (total - elapsed) / 260) : 1);
+        const bx = dst.x, by = dst.y - 30;
+        ctx.font = '900 18px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillStyle = '#e2564d'; ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 3;
+        ctx.strokeText('+' + a.count, bx, by); ctx.fillText('+' + a.count, bx, by);
+        ctx.restore();
+      }
     },
 
     drawTurnFrame(ctx) {

@@ -58,6 +58,8 @@ class UnoGame {
     this.finished = false;
     this.winnerId = null;
     this.lastAction = null;    // { pid, text } — 마지막 행동 안내
+    this.penalty = null;       // { byId, targetId, count, seq } — 방금 적용된 드로우 페널티(클라 애니메이션용)
+    this.penaltySeq = 0;
   }
 
   top() { return this.discard[this.discard.length - 1]; }
@@ -138,11 +140,12 @@ class UnoGame {
   }
 
   _applyEffectAndAdvance(card) {
+    const byId = this.currentActorId();
     if (card.type === 'reverse') this.dir = -this.dir;
     this._advance(1); // 다음 사람
     const nextPid = this.currentActorId();
-    if (card.type === 'draw2') { this._drawTo(nextPid, 2); this._advance(1); }
-    else if (card.type === 'wild4') { this._drawTo(nextPid, 4); this._advance(1); }
+    if (card.type === 'draw2') { this._drawTo(nextPid, 2); this.penalty = { byId, targetId: nextPid, count: 2, seq: ++this.penaltySeq }; this._advance(1); }
+    else if (card.type === 'wild4') { this._drawTo(nextPid, 4); this.penalty = { byId, targetId: nextPid, count: 4, seq: ++this.penaltySeq }; this._advance(1); }
     else if (card.type === 'skip') { this._advance(1); }
     else if (card.type === 'reverse' && this.n === 2) { this._advance(1); } // 2인전 리버스=스킵
   }
