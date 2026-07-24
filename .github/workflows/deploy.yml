@@ -18,14 +18,12 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          script_stop: true
           script: |
             # 홈서버에 미리 git clone 되어 있는 프로젝트 디렉토리로 이동
             cd ~/lexio-online
 
             # 최신 코드 받아오기
-            git pull
+            git pull origin master
 
             # 이미지 재빌드 후 컨테이너 재기동 (app만 빌드 컨텍스트가 있어 redis/postgres는 그대로 유지됨)
             docker compose -f docker-compose.yml up -d --build
-

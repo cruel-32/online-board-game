@@ -371,7 +371,12 @@
         return (this.W - totalW) / 2;                 // 좌우 대칭 여백 → 화면 중앙 정렬
       };
       const x0start = xFor(c0), x1start = xFor(c1);
-      for (let i = 0; i < hand.length; i++) {
+      // 뒷줄(위쪽)을 먼저 그리고 앞줄(아래쪽)을 나중에 그려서, 앞줄 카드가 선택되어 위로
+      // 올라올 때 뒷줄 카드에 가려 잘리지 않고 항상 앞줄이 더 높은 z-index를 갖게 한다.
+      const drawOrder = [];
+      for (let i = 0; i < hand.length; i++) if (twoRows && i >= c0) drawOrder.push(i);
+      for (let i = 0; i < hand.length; i++) if (!(twoRows && i >= c0)) drawOrder.push(i);
+      for (const i of drawOrder) {
         const c = hand[i];
         const row = (twoRows && i >= c0) ? 1 : 0;
         const col = row === 0 ? i : i - c0;
