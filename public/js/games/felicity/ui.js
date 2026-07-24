@@ -184,9 +184,24 @@
       const y = this.animalRowY();
       // 각 카드 위치에 해당하는 패스 보상값(쥐 카드 숫자). 시작 카드(0번) 제외, 이미 가져갔어도 계속 표시.
       const mouseNums = (st.mouse || []).map((m) => m.num);
-      const bidding = st.phase === 'bidding' && !st.finished;
+      // 라운드가 진행 중(배치·경매)인 동안에는 빈칸일 때부터 끝날 때까지 리워드 라벨을 계속 표시
+      const roundActive = (st.phase === 'placing' || st.phase === 'bidding') && !st.finished;
       ctx.textAlign = 'center';
       for (let i = 0; i < totalSlots; i++) {
+        // 패스 보상 안내 — 시작 카드(0번) 제외, 빈칸/뒷면/공개 모두 라운드 내내 표시
+        if (roundActive && i >= 1) {
+          const reward = mouseNums[i - 1];
+          if (reward > 0) {
+            const label = `리워드 🪙${reward}`;
+            ctx.font = '800 10px sans-serif';
+            const bw = ctx.measureText(label).width + 12;
+            const by = y - 20;
+            ctx.fillStyle = 'rgba(80,45,10,0.92)';
+            this.roundRect(ctx, x + cw / 2 - bw / 2, by - 11, bw, 16, 8); ctx.fill();
+            ctx.fillStyle = '#ffe0a0';
+            ctx.fillText(label, x + cw / 2, by);
+          }
+        }
         // 아직 놓이지 않은 자리 → 카드와 동일한 크기의 빈 칸(점선)
         if (i >= row.length) {
           ctx.save();
@@ -222,20 +237,6 @@
         ctx.beginPath();
         ctx.arc(x + cw / 2, y + ch + 9, 5, 0, Math.PI * 2);
         ctx.fill();
-        // 패스 보상 안내 — 시작 카드(0번) 제외, 각 카드 위치의 쥐 카드 값을 항상 표시
-        if (bidding && i >= 1) {
-          const reward = mouseNums[i - 1];
-          if (reward > 0) {
-            const label = `리워드 🪙${reward}`;
-            ctx.font = '800 10px sans-serif';
-            const bw = ctx.measureText(label).width + 12;
-            const by = y - 20;
-            ctx.fillStyle = 'rgba(80,45,10,0.92)';
-            this.roundRect(ctx, x + cw / 2 - bw / 2, by - 11, bw, 16, 8); ctx.fill();
-            ctx.fillStyle = '#ffe0a0';
-            ctx.fillText(label, x + cw / 2, by);
-          }
-        }
         x += cw + gap;
       }
     },
