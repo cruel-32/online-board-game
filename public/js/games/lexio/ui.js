@@ -697,7 +697,17 @@
       const toRow = dragging && toIdx >= 0 ? this.rowOfIndex(toIdx, L) : -1;
       const sameRowDrag = dragging && toIdx >= 0 && fromRow === toRow;
 
+      // 뒷줄(위쪽)을 먼저 그리고 앞줄(아래쪽)을 나중에 그려서, 앞줄 카드가 선택(active)되어
+      // 위로 올라올 때 뒷줄 카드에 가려 잘리지 않고 항상 앞줄이 더 높은 z-index를 갖게 한다.
+      const drawOrder = [];
       for (let i = 0; i < this.handOrder.length; i++) {
+        if (this.rowOfIndex(i, L) === 1) drawOrder.push(i);
+      }
+      for (let i = 0; i < this.handOrder.length; i++) {
+        if (this.rowOfIndex(i, L) === 0) drawOrder.push(i);
+      }
+
+      for (const i of drawOrder) {
         if (dragging && i === fromIdx) continue; // 드래그 중인 타일은 마지막에
         const row = this.rowOfIndex(i, L);
         let col = row === 0 ? i : i - L.c0;

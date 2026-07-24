@@ -27,6 +27,14 @@ function sendTo(clientId, msg) {
 function sendError(ws, message) {
   send(ws, { type: 'error', message });
 }
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 function roomCode() {
   let code;
   do {
@@ -230,6 +238,7 @@ function startGame(room) {
   }
   room.roundNo += 1;
   room.state = 'playing';
+  shuffleInPlace(room.players); // 방 입장 순서와 무관하게 매 게임 시작마다 순서를 무작위로 섞는다
   room.game = engine.createGame(room);
   for (const p of room.players) p.ready = p.isBot;
   broadcastRoom(room);
