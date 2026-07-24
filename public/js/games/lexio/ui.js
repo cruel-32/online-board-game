@@ -261,7 +261,63 @@
       this.drawSeats(ctx);
       this.drawMyInfo(ctx);
       this.drawHand(ctx);
+      this.drawPlayAnim(ctx);
       if (this.isMyTurn()) this.drawTurnEffects(ctx);
+    },
+
+    // 조합을 낸 플레이어 → 중앙 테이블로 타일이 역동적으로 날아오는 애니메이션.
+    // 페어 이상은 한꺼번에(같은 진행도로) 쾅 날아온다.
+    _sigOfTable(table) {
+      return table ? table.byId + '#' + table.tiles.map((t) => t.id).join(',') : '';
+    },
+    _sourceXY(id) {
+      if (id === this.myId) return { x: this.W / 2, y: this.H - 70 };
+      const seat = this.seatPositions().find((s) => s.player.id === id);
+      return seat ? { x: seat.x, y: seat.y - 8 } : { x: this.W / 2, y: this.H * 0.2 };
+    },
+    startPlayAnim(table) {
+      if (!table || !table.tiles || !table.tiles.length) return;
+      this.playAnim = {
+        sig: this._sigOfTable(table),
+        tiles: table.tiles.slice(),
+        from: this._sourceXY(table.byId),
+        start: performance.now(),
+        dur: 300,
+      };
+    },
+    drawPlayAnim(ctx) {
+      const a = this.playAnim;
+      if (!a) return;
+      // 상태가 바뀌어 더 이상 현재 테이블과 맞지 않으면 종료
+      if (!this.state || !this.state.table || this._sigOfTable(this.state.table) !== a.sig) { this.playAnim = null; return; }
+      const now = this.anim || performance.now();
+      let p = (now - a.start) / a.dur;
+      if (p >= 1) { this.playAnim = null; return; } // 종료 → drawCenter가 정착 타일을 그림
+      const L = this.centerTileLayout(a.tiles.length);
+      const ease = 1 - Math.pow(1 - p, 3); // easeOutCubic
+      const scale = 1.35 - 0.35 * ease;     // 뷰어 쪽에서 날아와 정착 크기로
+      // 착지 직전 임팩트(페어 이상일수록 강하게): 확장 링 + 글로우
+      if (p > 0.82) {
+        const ip = (p - 0.82) / 0.18;
+        const r = (18 + a.tiles.length * 10) * ip;
+        ctx.save();
+        ctx.globalAlpha = (1 - ip) * 0.6;
+        ctx.strokeStyle = '#ffe9a8'; ctx.lineWidth = 3 + a.tiles.length;
+        ctx.beginPath(); ctx.arc(L.cx, L.cy + 6, r, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+      for (let i = 0; i < a.tiles.length; i++) {
+        const to = L.positions[i];
+        const x = a.from.x + (to.x + L.tw / 2 - a.from.x) * ease;
+        const y = a.from.y + (to.y + L.th / 2 - a.from.y) * ease;
+        const rot = (1 - ease) * (i % 2 ? 0.4 : -0.4);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(rot);
+        ctx.scale(scale, scale);
+        this.draw3DTile(ctx, -L.tw / 2, -L.th / 2, L.tw, L.th, a.tiles[i], { glow: true });
+        ctx.restore();
+      }
     },
 
     // 내 차례임을 놓치지 않도록 화면 전체 테두리 글로우 + 반짝이는 별빛 + 시작 직후 강조 배너를 그린다.
@@ -414,19 +470,31 @@
       ctx.stroke();
     },
 
+    // 중앙 테이블에 놓이는 타일들의 좌표(애니메이션 도착점과 공유)
+    centerTileLayout(count) {
+      const cx = this.W / 2, cy = this.H * 0.47;
+      const tw = this.H < 380 ? 34 : 40, th = Math.round(tw * 1.38);
+      const overlap = count > 3 ? tw * 0.62 : tw * 0.85;
+      const totalW = tw + overlap * (count - 1);
+      const startX = cx - totalW / 2;
+      const y = cy - th / 2 + 6;
+      const positions = [];
+      for (let i = 0; i < count; i++) positions.push({ x: startX + overlap * i, y });
+      return { tw, th, overlap, startX, y, positions, cx, cy };
+    },
+
     drawCenter(ctx) {
       const st = this.state;
       const cx = this.W / 2, cy = this.H * 0.47;
       if (st.table) {
         const tiles = st.table.tiles;
-        const tw = this.H < 380 ? 34 : 40, th = Math.round(tw * 1.38);
-        const overlap = tiles.length > 3 ? tw * 0.62 : tw * 0.85;
-        const totalW = tw + overlap * (tiles.length - 1);
-        let x = cx - totalW / 2;
-        const y = cy - th / 2 + 6;
-        for (const t of tiles) {
-          this.draw3DTile(ctx, x, y, tw, th, t, {});
-          x += overlap;
+        const L = this.centerTileLayout(tiles.length);
+        const tw = L.tw, th = L.th;
+        const y = L.y;
+        // 방금 낸 조합이 날아오는 중이면(playAnim) 정착 타일은 그리지 않는다(비행 타일이 대신 보임)
+        const flying = this.playAnim && this.playAnim.sig === this._sigOfTable(st.table);
+        if (!flying) {
+          for (let i = 0; i < tiles.length; i++) this.draw3DTile(ctx, L.positions[i].x, y, tw, th, tiles[i], {});
         }
         if (st.finished) {
           this.drawFinishBanner(ctx, cx, y);

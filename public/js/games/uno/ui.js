@@ -37,16 +37,37 @@
     },
 
     setState(state) {
+      const prev = this.state;
       this.state = state;
       this.myId = state.you;
       // 내 손패에 없는 와일드 선택은 해제
       if (this.wildPending && !state.hand.some((c) => c.id === this.wildPending)) this.wildPending = null;
+      // 누군가 카드를 냈으면(버림패 맨 위 변화) 그 플레이어 → 중앙으로 카드가 날아오는 애니메이션
+      const top = state.discardTop;
+      const topSig = top ? (top.id || (top.color + top.type + top.num)) : '';
+      if (prev && topSig && topSig !== this._topSig && state.lastAction && /냄$/.test(state.lastAction.text || '')) {
+        this.startPlayAnim(top, state.lastAction);
+      }
+      this._topSig = topSig;
       // 드로우 페널티가 새로 발생하면(seq 변화) 카드가 날아가는 애니메이션 시작
       const pen = state.penalty;
       if (pen && pen.seq && pen.seq !== this._penaltySeqSeen) {
         this._penaltySeqSeen = pen.seq;
         this.startPenaltyAnim(pen);
       }
+    },
+
+    // 낸 카드가 그 플레이어 좌석 → 중앙 버림패로 날아오는 애니메이션(단일 카드)
+    startPlayAnim(card, lastAction) {
+      // 낸 사람 찾기: lastAction.name과 일치하는 플레이어 좌석(없으면 위쪽에서 등장)
+      let from = { x: this.W / 2, y: this.H * 0.2 };
+      const by = (this.state.players || []).find((p) => p.name === (lastAction && lastAction.name));
+      if (by) {
+        if (by.id === this.myId) from = { x: this.W / 2, y: this.H - 70 };
+        else { const seat = this.seatPositions().find((s) => s.player.id === by.id); if (seat) from = { x: seat.x, y: seat.y - 8 }; }
+      }
+      this._playAnim = { card, from, start: performance.now(), dur: 260 };
+      if (window.Sound && window.Sound.play) window.Sound.play();
     },
 
     // 드로우 카드(+2/+4) 페널티: 뽑기 더미에서 대상 플레이어 좌석으로 카드가 날아가는 애니메이션
@@ -134,6 +155,7 @@
       this.drawCenter(ctx);
       this.drawHand(ctx);
       this.drawLastAction(ctx);
+      this.drawPlayAnim(ctx);
       this.drawPenaltyAnim(ctx);
       if (this.isMyTurn() && !this.wildPending) this.drawTurnFrame(ctx);
       if (this.wildPending) this.drawWildPicker(ctx);
@@ -246,8 +268,10 @@
       ctx.lineWidth = 4; ctx.shadowColor = COLOR_HEX[st.currentColor] || '#888'; ctx.shadowBlur = 14;
       this.roundRect(ctx, cx - cw / 2 - 5, cy - ch / 2 - 5, cw + 10, ch + 10, 12); ctx.stroke();
       ctx.restore();
-      // 버림패 맨 위
-      this.drawCard(ctx, cx - cw / 2, cy - ch / 2, cw, ch, st.discardTop);
+      // 버림패 맨 위 — 방금 낸 카드가 날아오는 중이면 정착 카드는 숨기고(비행 카드가 대신 보임)
+      const flying = this._playAnim && this._playAnim.card &&
+        (this._playAnim.card.id ? this._playAnim.card.id === st.discardTop.id : true);
+      if (!flying) this.drawCard(ctx, cx - cw / 2, cy - ch / 2, cw, ch, st.discardTop);
 
       // 드로우 카드(+2/+4)가 맨 위일 때: 페널티는 이미 적용됐고 색만 맞추면 됨을 명확히 안내
       const topT = st.discardTop && st.discardTop.type;
@@ -347,6 +371,27 @@
       ctx.fillStyle = 'rgba(0,0,0,0.5)';
       this.roundRect(ctx, x - w / 2, y - 13, w, 20, 10); ctx.fill();
       ctx.fillStyle = '#d8d2e4'; ctx.fillText(text, x, y + 1);
+    },
+
+    // 낸 카드가 플레이어 좌석 → 중앙 버림패로 역동적으로 날아오는 애니메이션
+    drawPlayAnim(ctx) {
+      const a = this._playAnim;
+      if (!a) return;
+      const now = performance.now();
+      let p = (now - a.start) / a.dur;
+      if (p >= 1) { this._playAnim = null; return; }
+      const cx = this.W / 2, cy = this.centerY();
+      const cw = this.H < 420 ? 52 : 62, ch = Math.round(cw * 1.45);
+      const ease = 1 - Math.pow(1 - p, 3);
+      const x = a.from.x + (cx - a.from.x) * ease;
+      const y = a.from.y + (cy - a.from.y) * ease;
+      const scale = 1.3 - 0.3 * ease;
+      const rot = (1 - ease) * 0.5;
+      ctx.save();
+      ctx.translate(x, y); ctx.rotate(rot); ctx.scale(scale, scale);
+      ctx.shadowColor = 'rgba(0,0,0,0.4)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+      this.drawCard(ctx, -cw / 2, -ch / 2, cw, ch, a.card);
+      ctx.restore();
     },
 
     // 드로우 페널티 카드가 뽑기 더미에서 대상 좌석으로 역동적으로 날아가는 애니메이션

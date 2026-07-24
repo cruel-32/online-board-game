@@ -147,8 +147,8 @@
     setState(state) {
       const prev = this.state;
       this.state = state;
+      GameUI.setState(state);          // 애니메이션이 새 상태의 좌석/테이블을 참조하도록 먼저 갱신
       this._playDiffSounds(prev, state);
-      GameUI.setState(state);
       this.updateHudButtons();
       this.maybeAutoPass();
     },
@@ -329,7 +329,9 @@
       const nt = next.table, pt = prev.table;
       if (nt && (!pt || pt.byId !== nt.byId || pt.tiles.length !== nt.tiles.length ||
           pt.tiles.map((t) => t.id).join() !== nt.tiles.map((t) => t.id).join())) {
-        Sound.play();
+        // 카드가 날아오는 애니메이션 시작 + 조합 크기에 따라 효과음 선택(페어 이상=강력한 "쾅")
+        if (window.GameUI && window.GameUI.startPlayAnim) window.GameUI.startPlayAnim(nt);
+        if (nt.tiles.length >= 2) Sound.slam(); else Sound.play();
         return;
       }
       const prevPassed = new Map(prev.players.map((p) => [p.id, p.passed]));

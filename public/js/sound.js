@@ -105,6 +105,58 @@
     osc.stop(t0 + dur + 0.01);
   }
 
+  // 강력한 "쾅" 임팩트: 저음 서브 붐(내려꽂힘) + 넓은 노이즈 버스트(타격) + 밝은 트랜지언트.
+  // 페어 이상 조합을 한꺼번에 낼 때 사용.
+  function slamHit() {
+    const c = getCtx();
+    if (!c) return;
+    const t0 = c.currentTime;
+
+    // 1) 서브 붐: 낮게 내려꽂히는 사인
+    const sub = c.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(170, t0);
+    sub.frequency.exponentialRampToValueAtTime(38, t0 + 0.26);
+    const sg = c.createGain();
+    sg.gain.setValueAtTime(0.0001, t0);
+    sg.gain.linearRampToValueAtTime(0.42, t0 + 0.012);
+    sg.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.34);
+    sub.connect(sg); sg.connect(c.destination);
+    sub.start(t0); sub.stop(t0 + 0.36);
+
+    // 2) 타격 노이즈 버스트: 넓은 대역, 빠르게 감쇠
+    const dur = 0.16;
+    const bufferSize = Math.max(1, Math.round(c.sampleRate * dur));
+    const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      const decay = 1 - i / bufferSize;
+      data[i] = (Math.random() * 2 - 1) * decay * decay;
+    }
+    const noise = c.createBufferSource();
+    noise.buffer = buffer;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(2600, t0);
+    lp.frequency.exponentialRampToValueAtTime(500, t0 + dur);
+    const ng = c.createGain();
+    ng.gain.setValueAtTime(0.5, t0);
+    ng.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    noise.connect(lp); lp.connect(ng); ng.connect(c.destination);
+    noise.start(t0); noise.stop(t0 + dur + 0.02);
+
+    // 3) 밝은 금속성 트랜지언트: 짧고 강한 "챙"
+    const osc = c.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(520, t0);
+    osc.frequency.exponentialRampToValueAtTime(180, t0 + 0.08);
+    const og = c.createGain();
+    og.gain.setValueAtTime(0.16, t0);
+    og.gain.exponentialRampToValueAtTime(0.0006, t0 + 0.11);
+    osc.connect(og); og.connect(c.destination);
+    osc.start(t0); osc.stop(t0 + 0.13);
+  }
+
   function speak(text, opt) {
     opt = opt || {};
     const synth = window.speechSynthesis;
@@ -142,6 +194,12 @@
       tileClack(0, 1.0);
       tileClack(0.045, 0.9);
       tileClack(0.085, 1.12);
+    },
+    // 페어 이상 조합을 한꺼번에 "쾅" 내려칠 때: 강력한 임팩트 + 청량한 패 소리
+    slam() {
+      slamHit();
+      tileClack(0.02, 1.05);
+      tileClack(0.06, 0.92);
     },
     // 패스: "패스" 음성 안내
     pass() {
