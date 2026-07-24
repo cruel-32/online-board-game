@@ -387,3 +387,7 @@ input, select {
 .fel-bid-arrow:disabled { opacity: 0.35; cursor: default; }
 .fel-bid-amt { display: block; font-size: 22px; font-weight: 800; color: #ffd76e; padding: 3px 0; }
 .fel-bid-info { width: 72px; text-align: center; font-size: 10px; color: #9a93a8; line-height: 1.3; }
+
+/* 포커류(홀덤·세븐) 대기실 설정 행 */
+.setup-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #d8d2e4; }
+.setup-row select { padding: 5px 8px; border-radius: 8px; background: #17151f; color: #ece7dc; border: 1px solid #3a3550; }

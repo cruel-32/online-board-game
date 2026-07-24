@@ -212,4 +212,83 @@ for (const pc of [3, 4, 5]) {
   }
 }
 
+/* ---------- 11. 포커 핸드 평가기 ---------- */
+{
+  const P = require('../public/shared/poker-core.js');
+  const c = (r, s) => ({ rank: r, suit: s, id: r + s });
+  const cmp = (a, b) => P.compareScore(P.evaluateBest(a).score, P.evaluateBest(b).score);
+  const sf = [c(10, 's'), c(9, 's'), c(8, 's'), c(7, 's'), c(6, 's'), c(2, 'd'), c(3, 'h')];
+  const quad = [c(9, 's'), c(9, 'h'), c(9, 'd'), c(9, 'c'), c(6, 's'), c(2, 'd'), c(3, 'h')];
+  assert(cmp(sf, quad) > 0, '스트레이트 플러시 > 포카드');
+  const wheel = [c(14, 's'), c(2, 'h'), c(3, 'd'), c(4, 'c'), c(5, 's'), c(13, 'd'), c(11, 'h')];
+  assert.deepEqual(P.evaluateBest(wheel).score, [4, 5], '휠 스트레이트(A-5)');
+  const fh = [c(8, 's'), c(8, 'h'), c(8, 'd'), c(3, 'c'), c(3, 's'), c(2, 'd'), c(9, 'h')];
+  const fl = [c(14, 'h'), c(11, 'h'), c(8, 'h'), c(4, 'h'), c(2, 'h'), c(3, 'd'), c(9, 'c')];
+  assert(cmp(fh, fl) > 0, '풀하우스 > 플러시');
+  console.log('✅ 포커 핸드 평가기');
+}
+
+/* ---------- 12. 홀덤: 봇 대전 + 칩 보존 ---------- */
+{
+  const holdem = require('../server/src/games/holdem');
+  const STACK = 1000;
+  for (const pc of [2, 3, 4, 6]) {
+    for (let t = 0; t < 5; t++) {
+      const players = Array.from({ length: pc }, (_, i) => ({ id: 'p' + i, name: 'P' + i, isBot: true, connected: true }));
+      const room = { id: 'r', name: '방', players, options: { stack: STACK }, roundNo: 0, matchOver: false };
+      holdem.resetMatch(room);
+      const total0 = players.reduce((s, p) => s + p.chips, 0);
+      let hands = 0;
+      while (!room.matchOver && players.filter((p) => p.chips > 0).length >= 2 && hands < 400) {
+        room.roundNo++;
+        const g = holdem.createGame(room);
+        let steps = 0;
+        while (!g.finished) {
+          const pid = holdem.currentActor(g);
+          assert(pid, '진행 중이면 행동자 존재');
+          holdem.applyAction(g, room, pid, holdem.botAction(g, pid));
+          assert(++steps < 100000, '무한 루프 없음');
+        }
+        holdem.settle(g, room);
+        assert.equal(players.reduce((s, p) => s + p.chips, 0), total0, '칩 보존');
+        hands++;
+      }
+      assert(hands > 0, '핸드 진행됨');
+    }
+    console.log(`✅ 홀덤 ${pc}인 봇 대전 5매치 (칩 보존)`);
+  }
+}
+
+/* ---------- 13. 세븐포커: 봇 대전 + 칩 보존 + 카드 무결성 ---------- */
+{
+  const seven = require('../server/src/games/seven');
+  for (const pc of [2, 3, 4, 6]) {
+    for (let t = 0; t < 5; t++) {
+      const players = Array.from({ length: pc }, (_, i) => ({ id: 'p' + i, name: 'P' + i, isBot: true, connected: true }));
+      const room = { id: 'r', name: '방', players, options: { stack: 1000 }, roundNo: 0, matchOver: false };
+      seven.resetMatch(room);
+      const total0 = players.reduce((s, p) => s + p.chips, 0);
+      let hands = 0;
+      while (!room.matchOver && players.filter((p) => p.chips > 0).length >= 2 && hands < 200) {
+        room.roundNo++;
+        const g = seven.createGame(room);
+        let steps = 0;
+        while (!g.finished) {
+          const pid = seven.currentActor(g);
+          assert(pid, '진행 중이면 행동자 존재');
+          seven.applyAction(g, room, pid, seven.botAction(g, pid));
+          assert(++steps < 100000, '무한 루프 없음');
+        }
+        const seen = new Set();
+        for (const s of g.seats) for (const c of s.cards) { const id = c.card.rank + c.card.suit; assert(!seen.has(id), '카드 중복 없음'); seen.add(id); }
+        seven.settle(g, room);
+        assert.equal(players.reduce((s, p) => s + p.chips, 0), total0, '칩 보존');
+        hands++;
+      }
+      assert(hands > 0, '핸드 진행됨');
+    }
+    console.log(`✅ 세븐포커 ${pc}인 봇 대전 5매치 (칩 보존·카드 무결성)`);
+  }
+}
+
 console.log('\n🎉 모든 테스트 통과');
