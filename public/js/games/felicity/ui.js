@@ -103,15 +103,16 @@
     },
 
     /* ---------- 레이아웃(렉시오와 동일한 원형 좌석 배치) ----------
-     * 상단: 쥐 카드 행 + 은행 / 그 아래 반원형 테이블에 다른 플레이어가 둘러앉고,
+     * 상단: 은행 표시 / 그 아래 반원형 테이블에 다른 플레이어가 둘러앉고,
      * 좌석 아래(테이블 중앙)에 자루(동물 카드 열), 화면 하단에 내 손패를 둔다.
+     * 렉시오와 마찬가지로 화면 높이 비율로 중심(cy)을 잡아, 화면이 커도 위쪽에만 몰리지 않고
+     * 테이블이 화면 중앙 쪽까지 내려오게 한다(은행 표시 등 나머지 UI도 이 cy를 기준으로 함께 내려간다).
      */
     seatCenter() {
       const cx = this.W / 2;
       const avatarR = 18;
-      const topReserve = 46;                        // 상단 은행 표시 + 여백(쥐 카드 행 제거로 축소)
-      const ry = Math.min(this.H * 0.12, 90);
-      const cy = topReserve + avatarR + 6 + ry;    // 가장 높은 아바타가 상단 영역을 침범하지 않도록
+      const cy = this.H * 0.40;
+      const ry = Math.min(this.H * 0.16, 100);
       const rx = Math.min(this.W * 0.40, 330);
       return { cx, cy, rx, ry, avatarR };
     },
@@ -162,13 +163,16 @@
       ctx.closePath();
     },
 
-    // 상단 은행 표시(쥐 카드 행은 제거 — 패스 보상은 자루 카드 위 "리워드"로만 안내)
+    // 은행 표시(쥐 카드 행은 제거 — 패스 보상은 자루 카드 위 "리워드"로만 안내)
+    // 좌석 영역(seatCenter) 바로 위, 화면 상단에 딱 붙지 않을 만큼만 여백을 두고 다른 UI와 함께 내려간다.
     drawMouseRow(ctx) {
       const st = this.state;
+      const sc = this.seatCenter();
+      const y = Math.max(24, sc.cy - sc.ry - sc.avatarR - 40);
       ctx.fillStyle = '#ffd76e';
       ctx.font = '700 13px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`은행 🪙${st.bank}`, this.W / 2, 24);
+      ctx.fillText(`은행 🪙${st.bank}`, this.W / 2, y);
     },
 
     // 동물 카드 열(자루)
