@@ -1,7 +1,9 @@
 /**
  * 노땡스 게임 클라이언트 (플러그인).
- * 게임 화면 HUD·팝업(내 카드/게임룰/결과)을 주입하고, 캔버스 렌더러(NoThanksUI)를 구동한다.
+ * 게임 화면 HUD·팝업(게임룰/결과)을 주입하고, 캔버스 렌더러(NoThanksUI)를 구동한다.
  * shell(게임 독립 셸)이 mount/unmount/setState/onRoundOver/renderSetup 를 호출한다.
+ * 모은 카드는 노땡스 규칙상 전체공개 정보이므로, 캔버스에 모든 플레이어의 카드를 실제로 표시한다
+ * (별도 "내 카드함" 팝업은 두지 않는다).
  */
 (function () {
   'use strict';
@@ -9,24 +11,12 @@
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s).replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
 
-  // 서버 정산과 동일한 공식(연속 숫자는 최저값만 합산, 보유 칩만큼 차감) — 진행 중 미리보기 표시용
-  function scoreOf(cards, chips) {
-    const sorted = cards.slice().sort((a, b) => a - b);
-    let sum = 0;
-    for (let i = 0; i < sorted.length; i++) {
-      if (i > 0 && sorted[i] === sorted[i - 1] + 1) continue;
-      sum += sorted[i];
-    }
-    return sum - chips;
-  }
-
   const HUD_HTML = `
     <div class="hud-left">
       <button id="btn-pass" class="btn hud-btn-main pass">칩 걸기</button>
     </div>
     <div class="hud-right">
       <div class="hud-secondary">
-        <button id="btn-mycards" class="btn hud-btn">내<br>카드함</button>
         <button id="btn-rules" class="btn hud-btn">게임룰</button>
       </div>
       <button id="btn-take" class="btn hud-btn-main gold">가져<br>가기</button>
@@ -50,12 +40,6 @@
     <p>덱의 24장을 모두 가져가면 게임이 끝나고 곧바로 점수를 정산합니다.</p>`;
 
   const POPUPS_HTML = `
-    <div id="mycards-popup" class="popup dismissable hidden">
-      <div class="popup-inner panel">
-        <header><h3>내 카드함</h3><button class="popup-close" data-close="mycards-popup">✕</button></header>
-        <div id="mycards-body" class="assist-body"></div>
-      </div>
-    </div>
     <div id="rules-popup" class="popup dismissable hidden">
       <div class="popup-inner panel">
         <header><h3>게임룰</h3><button class="popup-close" data-close="rules-popup">✕</button></header>
@@ -138,7 +122,6 @@
         if (!this.state || this.state.turnId !== this.state.you) return;
         this.ctx.send({ type: 'game_action', action: { kind: 'pass' } });
       });
-      $('btn-mycards').addEventListener('click', () => { this.renderMyCards(); window.Modal.open('mycards-popup'); });
       $('btn-rules').addEventListener('click', () => window.Modal.open('rules-popup'));
 
       $('btn-result-ready').addEventListener('click', () => {
@@ -161,35 +144,6 @@
       const pass = $('btn-pass'), take = $('btn-take');
       if (pass) pass.disabled = !(myTurn && me && me.chips > 0);
       if (take) take.disabled = !myTurn;
-    },
-
-    /* ---------- 내 카드함 팝업 ---------- */
-    renderMyCards() {
-      if (!this.state) return;
-      const body = $('mycards-body');
-      const me = this.state.players.find((p) => p.id === this.state.you);
-      if (!me || !me.cards.length) {
-        body.innerHTML = '<div class="assist-empty">아직 가져온 카드가 없습니다.</div>';
-        return;
-      }
-      const cards = me.cards.slice().sort((a, b) => a - b);
-      const runs = [];
-      let cur = [];
-      for (const c of cards) {
-        if (cur.length && c === cur[cur.length - 1] + 1) cur.push(c);
-        else { if (cur.length) runs.push(cur); cur = [c]; }
-      }
-      if (cur.length) runs.push(cur);
-
-      const rowsHtml = runs.map((run) => {
-        const tiles = run.map((n, i) => `<span class="mini-tile plain${i > 0 ? ' mini-tile-dim' : ''}">${n}</span>`).join('');
-        return `<div class="assist-row">${tiles}</div>`;
-      }).join('');
-      const score = scoreOf(cards, me.chips);
-      const rawSum = cards.reduce((a, c) => a + c, 0);
-      body.innerHTML = `${rowsHtml}
-        <p class="muted small-text">카드 숫자 합계 ${rawSum} 중 연속 구간은 최저값만 계산 →
-        보유 칩 ${me.chips}개 차감 → 현재 예상 점수 <strong>${score}</strong></p>`;
     },
 
     /* ---------- 결과 팝업 ---------- */

@@ -2,17 +2,13 @@
  * 노땡스 게임 화면 캔버스 렌더러.
  * - 렉시오와 동일한 카지노풍 원형(타원) 테이블 + 입체(3D 느낌) 카드 스타일을 재사용.
  * - 개인 손패 대신, 중앙에는 현재 뒤집힌 카드(+쌓인 칩), 화면 하단에는 "내가 모은 카드" 줄을 보여준다.
- * - 모은 카드는 모두 공개 정보이므로 상대 좌석에도 매수/칩을 뱃지로 표시한다.
+ * - 노땡스는 모은 카드가 전체공개이므로, 상대 좌석 위에도 실제 카드를 아주 작게(5장씩 겹쳐서) 오름차순으로 보여준다.
+ * - 내 카드 줄은 렉시오 손패와 동일하게 7장을 넘으면 두 줄로 나눠 표시한다.
  */
 (function () {
   'use strict';
 
   const CARD_COLOR = '#ffd76e';
-
-  function hexToRgba(hex, a) {
-    const n = parseInt(hex.slice(1), 16);
-    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
-  }
 
   const GameUI = {
     canvas: null, ctx: null, dpr: 1, W: 0, H: 0,
@@ -90,24 +86,39 @@
     },
 
     /* ---------- "내가 모은 카드" 줄 레이아웃 ----------
-     * 겹쳐서 욱여넣으면 2자리 숫자가 서로 가려 읽을 수 없으므로, 겹치지 않는 간격을 유지할 수 있는
-     * 한도까지만 한 줄로 펼치고, 그 이상(카드가 아주 많이 쌓인 경우)은 요약 뱃지로 대체한다.
-     * 전체 목록은 "내 카드함" 팝업(DOM)에서 항상 확인할 수 있다.
+     * 렉시오 손패(handLayout)와 동일한 방식: 7장을 넘으면 앞줄(하단)·뒷줄(상단) 두 줄로 나누고,
+     * 가용 폭에 맞춰 카드 크기를 줄여 화면 밖으로 잘리지 않게 한다.
      */
     myCardsLayout(count) {
       const H = this.H, W = this.W;
-      const tw = H < 380 ? 32 : 38, th = Math.round(tw * 1.36);
+      const twoRows = count > 7;
+      const c0 = twoRows ? Math.ceil(count / 2) : count; // 앞줄(하단) 개수
+      const c1 = twoRows ? count - c0 : 0;                // 뒷줄(상단) 개수
+      const maxCount = Math.max(c0, c1, 1);
       const sideReserve = (H < 400 ? 60 : 66) + 12;
       const availW = W - 2 * sideReserve;
-      const gap = 4;
-      const spacing = tw + gap;
-      const neededW = count <= 1 ? tw : tw * count + gap * (count - 1);
-      const compact = count > 0 && neededW > availW;
-      const totalW = compact ? tw : neededW;
-      const startX = (W - totalW) / 2;
-      const y = H - th - 10;
-      return { tw, th, spacing, startX, y, compact };
+
+      let tw = H < 380 ? 32 : 38;
+      if (maxCount > 1) {
+        const neededW = tw + (tw + 4) * (maxCount - 1);
+        if (neededW > availW) tw = Math.max(18, Math.floor((availW - 4 * (maxCount - 1)) / maxCount));
+      } else if (tw > availW) {
+        tw = Math.max(18, availW);
+      }
+      const th = Math.round(tw * 1.36);
+      const spacing = maxCount > 1 ? Math.min(tw + 4, (availW - tw) / (maxCount - 1)) : 0;
+      const rowGap = 6;
+
+      const xFor = (cnt) => {
+        const totalW = tw + spacing * (Math.max(cnt, 1) - 1);
+        return (W - totalW) / 2;
+      };
+      const y0 = H - th - 10;                    // 앞줄(화면 하단)
+      const y1 = twoRows ? y0 - th - rowGap : y0; // 뒷줄(앞줄 위쪽)
+
+      return { n: count, tw, th, spacing, twoRows, c0, c1, x0: xFor(c0), x1: xFor(c1), y0, y1 };
     },
+    // "내 차례"/이름·칩 표시는 카드 개수·줄 수에 따라 위치가 흔들리지 않도록 항상 고정된 좌측 위치를 쓴다.
     infoX() {
       const sideReserve = (this.H < 400 ? 60 : 66) + 12;
       return Math.max(10, sideReserve);
@@ -262,16 +273,37 @@
         ctx.fillText(p.name.slice(0, 8), x, y + 24);
 
         const badgeY = y + 32;
-        ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        this.roundRect(ctx, x - 34, badgeY, 68, 16, 8);
-        ctx.fill();
+        const chipLabel = `● ${p.chips}`;
         ctx.font = '700 10px sans-serif';
-        ctx.fillStyle = '#9fe8ff';
-        ctx.textAlign = 'left';
-        ctx.fillText(`🗂×${p.cards.length}`, x - 31, badgeY + 12);
-        ctx.textAlign = 'center';
+        const bw = ctx.measureText(chipLabel).width + 16;
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        this.roundRect(ctx, x - bw / 2, badgeY, bw, 16, 8);
+        ctx.fill();
         ctx.fillStyle = p.chips <= 0 ? '#ff8f8f' : '#ffd76e';
-        ctx.fillText(`● ${p.chips}`, x + 15, badgeY + 12);
+        ctx.fillText(chipLabel, x, badgeY + 12);
+
+        // 모은 카드는 노땡스 규칙상 전체공개이므로, 실제 숫자를 오름차순으로 아주 작게 보여준다.
+        this.drawSeatCards(ctx, p.cards, x, y - 27);
+      }
+    },
+
+    // 오름차순으로 정렬해 5장씩 겹쳐서 한 줄로, 넘치면 위로 줄을 쌓아 표시한다(전체공개 정보).
+    drawSeatCards(ctx, rawCards, cx, bottomY) {
+      if (!rawCards || !rawCards.length) return;
+      const cards = rawCards.slice().sort((a, b) => a - b);
+      const tw = 13, th = 18, overlap = 7, perRow = 5, rowGap = 3;
+      const rowH = th + rowGap;
+      const rows = Math.ceil(cards.length / perRow);
+      for (let r = 0; r < rows; r++) {
+        const row = cards.slice(r * perRow, r * perRow + perRow);
+        const y = bottomY - (rows - r) * rowH;
+        const totalW = tw + overlap * (row.length - 1);
+        const x0 = cx - totalW / 2;
+        for (let i = 0; i < row.length; i++) {
+          const idx = r * perRow + i;
+          const runStart = idx === 0 || row[i] !== cards[idx - 1] + 1;
+          this.draw3DCard(ctx, x0 + overlap * i, y, tw, th, row[i], { dim: !runStart, tiny: true });
+        }
       }
     },
 
@@ -281,7 +313,7 @@
       if (!me) return;
       const L = this.myCardsLayout(me.cards.length);
       const x = this.infoX();
-      const rowY = L.y - 10;
+      const rowY = L.y0 - 10;
       const isTurn = this.isMyTurn();
 
       ctx.textAlign = 'left';
@@ -311,40 +343,29 @@
       }
     },
 
+    // 렉시오 손패와 동일한 순서: 뒷줄(위쪽)을 먼저 그리고 앞줄(아래쪽)을 나중에 그려서
+    // 앞줄이 항상 뒷줄보다 위에 보이게 한다(겹쳐도 잘리지 않음).
     drawMyCards(ctx) {
       const st = this.state;
       const me = st.players.find((p) => p.id === this.myId);
       if (!me || !me.cards.length) return;
       const cards = me.cards.slice().sort((a, b) => a - b);
       const L = this.myCardsLayout(cards.length);
-      if (L.compact) { this.drawMyCardsBadge(ctx, cards, L); return; }
+
       // 방금 가져온 카드가 아직 중앙→내 카드줄로 날아오는 중이면, 도착 지점에 같은 카드가
       // 두 번(정착한 카드 + 날아오는 카드) 겹쳐 보이지 않도록 정착 쪽 타일은 잠시 그리지 않는다.
-      // (자리는 그대로 유지해 다른 카드들이 밀리지 않게 한다.)
       const flying = this.takeAnim && this.takeAnim.sig === st.seq && this.takeAnim.toMe;
       const skipIdx = flying ? cards.indexOf(this.takeAnim.card) : -1;
-      for (let i = 0; i < cards.length; i++) {
-        if (i === skipIdx) continue;
-        const runStart = i === 0 || cards[i] !== cards[i - 1] + 1;
-        const x = L.startX + L.spacing * i;
-        this.draw3DCard(ctx, x, L.y, L.tw, L.th, cards[i], { dim: !runStart });
-      }
-    },
 
-    // 카드가 너무 많이 쌓여 한 줄에 겹치지 않게 다 펼칠 수 없을 때의 요약 뱃지.
-    // 전체 목록은 "내 카드함" 팝업에서 확인할 수 있다.
-    drawMyCardsBadge(ctx, cards, L) {
-      const sum = cards.reduce((a, c) => a + c, 0);
-      const label = `🗂 ${cards.length}장 (합계 ${sum}) · "내 카드함"에서 자세히 보기`;
-      ctx.font = '700 13px sans-serif';
-      ctx.textAlign = 'center';
-      const w = ctx.measureText(label).width + 24;
-      const cx = this.W / 2, y = L.y + L.th / 2;
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      this.roundRect(ctx, cx - w / 2, y - 14, w, 28, 10);
-      ctx.fill();
-      ctx.fillStyle = '#ffd76e';
-      ctx.fillText(label, cx, y + 5);
+      const drawAt = (i, x, y) => {
+        if (i === skipIdx) return;
+        const runStart = i === 0 || cards[i] !== cards[i - 1] + 1;
+        this.draw3DCard(ctx, x, y, L.tw, L.th, cards[i], { dim: !runStart });
+      };
+      if (L.twoRows) {
+        for (let i = L.c0; i < cards.length; i++) drawAt(i, L.x1 + (i - L.c0) * L.spacing, L.y1);
+      }
+      for (let i = 0; i < L.c0; i++) drawAt(i, L.x0 + i * L.spacing, L.y0);
     },
 
     /* ---------- 애니메이션 ---------- */
@@ -353,7 +374,8 @@
         const st = this.state;
         const me = st.players.find((p) => p.id === this.myId);
         const L = this.myCardsLayout(me ? me.cards.length : 0);
-        return { x: this.W / 2, y: L.y + L.th / 2 };
+        const topY = L.twoRows ? L.y1 : L.y0;
+        return { x: this.W / 2, y: topY + L.th / 2 };
       }
       const seat = this.seatPositions().find((s) => s.player.id === id);
       return seat ? { x: seat.x, y: seat.y - 8 } : { x: this.W / 2, y: this.H * 0.2 };
@@ -419,35 +441,45 @@
     /* ---------- 카드 드로잉 ---------- */
     draw3DCard(ctx, x, y, w, h, num, opts) {
       opts = opts || {};
+      const r = opts.tiny ? 2 : 6;
       ctx.save();
       if (opts.glow) {
         ctx.shadowColor = '#ffd76e';
-        ctx.shadowBlur = 16;
+        ctx.shadowBlur = opts.tiny ? 4 : 16;
       }
-      ctx.fillStyle = '#060509';
-      this.roundRect(ctx, x + 2.5, y + 3.5, w, h, 6);
-      ctx.fill();
+      if (!opts.tiny) {
+        ctx.fillStyle = '#060509';
+        this.roundRect(ctx, x + 2.5, y + 3.5, w, h, r);
+        ctx.fill();
+      }
       const body = ctx.createLinearGradient(x, y, x, y + h);
       body.addColorStop(0, '#232030');
       body.addColorStop(1, '#131019');
       ctx.fillStyle = body;
-      this.roundRect(ctx, x, y, w, h, 6);
+      this.roundRect(ctx, x, y, w, h, r);
       ctx.fill();
       ctx.shadowBlur = 0;
 
-      ctx.strokeStyle = opts.glow ? '#ffd76e' : 'rgba(255,255,255,0.18)';
-      ctx.lineWidth = opts.glow ? 2 : 1;
-      this.roundRect(ctx, x, y, w, h, 6);
+      ctx.strokeStyle = opts.glow ? '#ffd76e' : 'rgba(255,255,255,0.22)';
+      ctx.lineWidth = opts.glow ? 2 : (opts.tiny ? 0.6 : 1);
+      this.roundRect(ctx, x, y, w, h, r);
       ctx.stroke();
 
-      ctx.textAlign = 'center';
       ctx.fillStyle = CARD_COLOR;
-      ctx.font = `800 ${Math.round(h * 0.4)}px sans-serif`;
-      ctx.fillText(String(num), x + w / 2, y + h * 0.6);
+      ctx.font = `800 ${Math.max(7, Math.round(h * (opts.tiny ? 0.52 : 0.4)))}px sans-serif`;
+      if (opts.tiny) {
+        // 실제 카드처럼 숫자를 좌상단에 배치 — 여러 장이 겹쳐도(뒤 카드가 오른쪽을 가려도)
+        // 각 카드의 왼쪽 여백에 숫자가 그대로 남아 있어 식별할 수 있다.
+        ctx.textAlign = 'left';
+        ctx.fillText(String(num), x + 1.5, y + h * 0.68);
+      } else {
+        ctx.textAlign = 'center';
+        ctx.fillText(String(num), x + w / 2, y + h * 0.6);
+      }
 
       if (opts.dim) {
-        ctx.fillStyle = 'rgba(5, 5, 10, 0.35)';
-        this.roundRect(ctx, x, y, w, h, 6);
+        ctx.fillStyle = `rgba(5, 5, 10, ${opts.tiny ? 0.28 : 0.35})`;
+        this.roundRect(ctx, x, y, w, h, r);
         ctx.fill();
       }
       ctx.restore();
