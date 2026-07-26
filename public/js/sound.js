@@ -227,6 +227,27 @@
       tone(1200, { type: 'sine', dur: 0.045, gain: 0.12, endFreq: 900 });
       tone(1600, { type: 'sine', dur: 0.035, gain: 0.08, delay: 0.02, endFreq: 1300 });
     },
+    // 테트리스: 카운트다운 "삑"(3·2·1) / "GO!"(더 높고 길게)
+    countdownBeep(isGo) {
+      if (isGo) tone(880, { type: 'sine', dur: 0.2, gain: 0.22, endFreq: 1200 });
+      else tone(520, { type: 'sine', dur: 0.1, gain: 0.16 });
+    },
+    // 테트리스: 상대에게 가비지(방해줄)를 받았을 때 경고음
+    garbageWarning() {
+      tone(300, { type: 'sawtooth', dur: 0.12, gain: 0.14, endFreq: 180 });
+      tone(300, { type: 'sawtooth', dur: 0.12, gain: 0.14, endFreq: 180, delay: 0.14 });
+    },
+    // 테트리스: 내가 탈락(보드가 가득 참) — 낮게 떨어지는 톤
+    eliminated() {
+      tone(300, { type: 'sawtooth', dur: 0.5, gain: 0.2, endFreq: 80 });
+    },
+    // 테트리스: 최후 생존(우승) — 밝은 4음 팡파르
+    victory() {
+      tone(523, { type: 'sine', dur: 0.12, gain: 0.16 });
+      tone(659, { type: 'sine', dur: 0.12, gain: 0.16, delay: 0.1 });
+      tone(784, { type: 'sine', dur: 0.12, gain: 0.16, delay: 0.2 });
+      tone(1047, { type: 'sine', dur: 0.32, gain: 0.2, delay: 0.3 });
+    },
   };
 
   window.Sound = Sound;

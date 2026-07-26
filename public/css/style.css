@@ -176,9 +176,37 @@ input, select {
 }
 .hud-btn-main.pass { background: linear-gradient(180deg, #5a3550, #3a2238); }
 
-/* 테트리스: 좌우 이동/회전 4버튼을 한 줄에 작게(터치 조작용) */
-.tet-dpad { display: flex; gap: 4px; margin-bottom: 6px; touch-action: none; }
-.tet-dpad .btn { width: 34px; height: 34px; padding: 0; font-size: 15px; }
+/* 테트리스: 키보드 방향키 물리 배치처럼 위 3칸(가운데=하드드롭, W와 동일) · 아래 3칸(좌/소프트드롭/우) */
+.tet-dpad {
+  position: relative;
+  width: 118px; height: 78px;
+  touch-action: none;
+}
+.tet-dpad .btn { position: absolute; width: 36px; height: 36px; padding: 0; font-size: 15px; }
+.tet-dpad-up { top: 0; left: 41px; }
+.tet-dpad-left { top: 41px; left: 0; }
+.tet-dpad-down { top: 41px; left: 41px; }
+.tet-dpad-right { top: 41px; right: 0; }
+
+/* 테트리스: 반시계·시계·HOLD 버튼을 가로로 나란히 배치(하드드롭 전용 버튼은 제거 — ▲ 버튼이 대신함) */
+.tet-rot-row { display: flex; flex-direction: row; gap: 6px; }
+.tet-rot-row .btn { height: 36px; padding: 0; font-size: 16px; }
+
+/* 테트리스: 버튼 설정(키 바인딩) 팝업의 액션 x KEY1/KEY2 그리드 */
+.tet-keybind-grid { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.tet-kb-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 6px; align-items: center; }
+.tet-kb-row.tet-kb-head { color: #9a93a8; font-size: 11px; text-align: center; }
+.tet-kb-label { font-size: 13px; color: #d8d2e4; }
+.tet-kb-cell {
+  background: #17151f; border: 1px solid #3a3550; border-radius: 6px;
+  color: #ffd76e; font-weight: 700; font-size: 13px; padding: 8px 4px; cursor: pointer;
+}
+.tet-kb-cell:active { transform: scale(0.96); }
+.tet-kb-cell.waiting {
+  border-color: #ffd76e; background: rgba(255, 215, 110, 0.15); color: #fff3d6;
+  animation: tet-kb-pulse 0.8s infinite;
+}
+@keyframes tet-kb-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
 /* ---- 팝업 ---- */
 .popup {

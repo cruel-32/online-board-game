@@ -21,6 +21,7 @@
     opponents: [], // [{id,name,alive,topOut,linesCleared,garbageSent,garbageReceived,board,holdType,nextTypes}]
     finished: false, winnerName: '',
     paused: false, // 아직 매치 시작 카운트다운 중이면 로컬 엔진을 진행시키지 않는다
+    countdownStart: null, _lastCountdownLabel: null,
 
     init(canvas, callbacks) {
       this.canvas = canvas;
@@ -44,6 +45,7 @@
         this.anim = performance.now();
         const dt = Math.min(100, this.anim - this.lastAnim); // 탭 전환 등으로 인한 큰 점프 방지
         this.lastAnim = this.anim;
+        this._updateCountdown();
         if (this.engine && !this.myTopOut && !this.finished && !this.paused) {
           const ev = this.engine.tick(dt);
           if (ev.locked) this._reportLock(ev);
@@ -57,6 +59,22 @@
     startLocal(seed) {
       this.engine = Engine.createEngine(seed);
       this.myTopOut = false;
+      this.paused = true;
+      this.countdownStart = performance.now();
+      this._lastCountdownLabel = null;
+    },
+
+    // 매치 시작 3·2·1·GO! 카운트다운 — 모든 클라이언트가 (거의) 동시에 로컬 엔진을 시작하도록
+    // 잠깐 대기시킨다. 카운트다운 중에는 입력도 index.js의 _canAct()에서 함께 막는다.
+    _updateCountdown() {
+      if (this.countdownStart == null) return;
+      const elapsed = this.anim - this.countdownStart;
+      const label = elapsed < 1000 ? '3' : elapsed < 2000 ? '2' : elapsed < 3000 ? '1' : elapsed < 3400 ? 'GO!' : null;
+      if (label !== this._lastCountdownLabel) {
+        this._lastCountdownLabel = label;
+        if (window.Sound && label) window.Sound.countdownBeep(label === 'GO!');
+      }
+      if (label === null) { this.countdownStart = null; this.paused = false; }
     },
 
     setOpponents(list) { this.opponents = list || []; },
@@ -113,6 +131,25 @@
       this.drawGarbageMeter(ctx, L);
       this.drawOpponents(ctx, L);
       if (this.finished) this.drawFinishedOverlay(ctx);
+      if (this.countdownStart != null) this.drawCountdown(ctx);
+    },
+
+    drawCountdown(ctx) {
+      const label = this._lastCountdownLabel;
+      if (!label) return;
+      ctx.save();
+      ctx.fillStyle = 'rgba(5,6,12,0.5)';
+      ctx.fillRect(0, 0, this.W, this.H);
+      const isGo = label === 'GO!';
+      const pulse = 0.8 + 0.2 * Math.sin(this.anim / 90);
+      ctx.textAlign = 'center';
+      ctx.font = `900 ${isGo ? 56 : 84}px sans-serif`;
+      ctx.fillStyle = isGo ? '#7fe08d' : '#ffd76e';
+      ctx.shadowColor = ctx.fillStyle;
+      ctx.shadowBlur = 30 * pulse;
+      ctx.fillText(label, this.W / 2, this.H / 2 + (isGo ? 18 : 30));
+      ctx.shadowBlur = 0;
+      ctx.restore();
     },
 
     drawBackground(ctx) {
