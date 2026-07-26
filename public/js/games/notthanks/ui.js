@@ -287,22 +287,23 @@
       }
     },
 
-    // 오름차순으로 정렬해 5장씩 겹쳐서 한 줄로, 넘치면 위로 줄을 쌓아 표시한다(전체공개 정보).
+    // 오름차순으로 정렬해 5장씩 겹치지 않게 한 줄로, 넘치면 위로 줄을 쌓아 표시한다(전체공개 정보).
     drawSeatCards(ctx, rawCards, cx, bottomY) {
       if (!rawCards || !rawCards.length) return;
       const cards = rawCards.slice().sort((a, b) => a - b);
-      const tw = 13, th = 18, overlap = 7, perRow = 5, rowGap = 3;
+      const tw = 14.4, th = 19.2, gap = 1, perRow = 5, rowGap = 1;
+      const spacing = tw + gap;
       const rowH = th + rowGap;
       const rows = Math.ceil(cards.length / perRow);
       for (let r = 0; r < rows; r++) {
         const row = cards.slice(r * perRow, r * perRow + perRow);
         const y = bottomY - (rows - r) * rowH;
-        const totalW = tw + overlap * (row.length - 1);
+        const totalW = tw + spacing * (row.length - 1);
         const x0 = cx - totalW / 2;
         for (let i = 0; i < row.length; i++) {
           const idx = r * perRow + i;
           const runStart = idx === 0 || row[i] !== cards[idx - 1] + 1;
-          this.draw3DCard(ctx, x0 + overlap * i, y, tw, th, row[i], { dim: !runStart, tiny: true });
+          this.draw3DCard(ctx, x0 + spacing * i, y, tw, th, row[i], { dim: !runStart, tiny: true });
         }
       }
     },
@@ -465,17 +466,10 @@
       this.roundRect(ctx, x, y, w, h, r);
       ctx.stroke();
 
+      ctx.textAlign = 'center';
       ctx.fillStyle = CARD_COLOR;
-      ctx.font = `800 ${Math.max(7, Math.round(h * (opts.tiny ? 0.52 : 0.4)))}px sans-serif`;
-      if (opts.tiny) {
-        // 실제 카드처럼 숫자를 좌상단에 배치 — 여러 장이 겹쳐도(뒤 카드가 오른쪽을 가려도)
-        // 각 카드의 왼쪽 여백에 숫자가 그대로 남아 있어 식별할 수 있다.
-        ctx.textAlign = 'left';
-        ctx.fillText(String(num), x + 1.5, y + h * 0.68);
-      } else {
-        ctx.textAlign = 'center';
-        ctx.fillText(String(num), x + w / 2, y + h * 0.6);
-      }
+      ctx.font = `800 ${Math.max(9, Math.round(h * 0.4))}px sans-serif`;
+      ctx.fillText(String(num), x + w / 2, y + h * 0.6);
 
       if (opts.dim) {
         ctx.fillStyle = `rgba(5, 5, 10, ${opts.tiny ? 0.28 : 0.35})`;
