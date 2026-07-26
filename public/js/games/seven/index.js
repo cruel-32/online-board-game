@@ -50,6 +50,12 @@
           <button id="sev-result-room" class="btn">대기실로</button>
         </div>
       </div>
+    </div>
+    <div id="sev-player-cards-popup" class="popup dismissable hidden">
+      <div class="popup-inner panel">
+        <header><h3 id="sev-player-cards-title">카드</h3><button class="popup-close" data-close="sev-player-cards-popup">✕</button></header>
+        <div id="sev-player-cards-body" class="assist-body"></div>
+      </div>
     </div>`;
 
   const Seven = {
@@ -73,8 +79,9 @@
       this.injected = Array.from(holder.children);
       this.injected.forEach((el) => screen.appendChild(el));
 
-      if (!SevenUI.canvas) SevenUI.init(canvas, {});
-      else SevenUI.resize && SevenUI.resize();
+      const callbacks = { onSeatClick: (id) => this.openPlayerCards(id) };
+      if (!SevenUI.canvas) SevenUI.init(canvas, callbacks);
+      else { SevenUI.callbacks = callbacks; SevenUI.resize && SevenUI.resize(); }
 
       $('sev-rules').addEventListener('click', () => window.Modal.open('sev-rules-popup'));
       $('sev-result-ready').addEventListener('click', () => {
@@ -150,6 +157,36 @@
     },
 
     send(action) { this.ctx.send({ type: 'game_action', action }); },
+
+    /* ---------- 좌석 클릭: 그 플레이어의 카드를 크게 보기(비공개 카드는 뒷면으로 표시) ---------- */
+    openPlayerCards(id) {
+      if (!this.state) return;
+      const player = this.state.players.find((p) => p.id === id);
+      if (!player) return;
+      $('sev-player-cards-title').textContent = `${esc(player.name)}님의 카드`;
+      const body = $('sev-player-cards-body');
+      if (player.out) {
+        body.innerHTML = '<div class="assist-empty">탈락한 플레이어입니다.</div>';
+      } else if (player.folded) {
+        body.innerHTML = '<div class="assist-empty">다이(폴드)한 핸드입니다.</div>';
+      } else if (!player.cards || !player.cards.length) {
+        body.innerHTML = '<div class="assist-empty">아직 받은 카드가 없습니다.</div>';
+      } else {
+        const poker = window.PokerCore;
+        const cardsHtml = player.cards.map((c) => {
+          if (c.hidden || c.rank == null) return `<span class="pcard back"></span>`;
+          const red = c.suit === 'h' || c.suit === 'd';
+          const rl = poker ? poker.rankLabel(c.rank) : String(c.rank);
+          const sym = poker ? poker.SUIT_SYMBOL[c.suit] : c.suit;
+          return `<span class="pcard ${red ? 'red' : 'black'}">${rl}${sym}</span>`;
+        }).join('');
+        const hiddenCount = player.cards.filter((c) => c.hidden || c.rank == null).length;
+        const note = hiddenCount
+          ? `<p class="muted small-text">비공개 카드 ${hiddenCount}장은 쇼다운 전까지 볼 수 없습니다.</p>` : '';
+        body.innerHTML = `<div class="assist-row">${cardsHtml}</div>${note}`;
+      }
+      window.Modal.open('sev-player-cards-popup');
+    },
 
     onRoundOver(result) {
       if (!result) return;

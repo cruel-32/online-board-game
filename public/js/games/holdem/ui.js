@@ -125,7 +125,7 @@
         // 상대 홀 카드(뒷면 또는 쇼다운 공개)
         if (!p.out && !p.folded) {
           const cw = 20, ch = 28;
-          const hx = x - cw - 1, hy = y - 40;
+          const hx = x - cw - 1, hy = y - 56;
           if (p.hole) { this.drawCard(ctx, hx, hy, cw, ch, p.hole[0]); this.drawCard(ctx, hx + cw + 2, hy, cw, ch, p.hole[1]); }
           else { this.drawCardBack(ctx, hx, hy, cw, ch); this.drawCardBack(ctx, hx + cw + 2, hy, cw, ch); }
         }

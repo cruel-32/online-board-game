@@ -23,12 +23,38 @@
       window.addEventListener('orientationchange', () => setTimeout(resize, 250));
       if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
       resize();
+      canvas.addEventListener('click', (e) => this.onClick(e));
+      canvas.addEventListener('pointermove', (e) => this.onHover(e));
       const loop = () => { this.anim = performance.now(); if (this.state) this.render(); requestAnimationFrame(loop); };
       requestAnimationFrame(loop);
     },
 
     setState(state) { this.state = state; this.myId = state.you; },
     isMyTurn() { return this.state && this.state.turnId === this.myId && !this.state.finished; },
+
+    /* ---------- 입력: 상대 좌석을 클릭하면 그 플레이어의 카드를 크게 보여주는 팝업을 연다 ---------- */
+    eventPos(e) {
+      const r = this.canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    },
+    // 아바타·이름·카드줄·스택 뱃지를 포함하는 넉넉한 사각 영역을 클릭 판정에 사용한다.
+    hitSeat(px, py) {
+      if (!this.state) return null;
+      for (const s of this.seatPositions()) {
+        if (Math.abs(px - s.x) <= 40 && py >= s.y - 75 && py <= s.y + 50) return s;
+      }
+      return null;
+    },
+    onClick(e) {
+      const p = this.eventPos(e);
+      const seat = this.hitSeat(p.x, p.y);
+      if (seat && this.callbacks.onSeatClick) this.callbacks.onSeatClick(seat.player.id);
+    },
+    onHover(e) {
+      if (!this.canvas) return;
+      const p = this.eventPos(e);
+      this.canvas.style.cursor = this.hitSeat(p.x, p.y) ? 'pointer' : 'default';
+    },
 
     roundRect(ctx, x, y, w, h, r) {
       ctx.beginPath();
@@ -115,9 +141,9 @@
         }
         // 상대 카드: 오픈은 앞면, 다운은 뒷면 — 아바타 위에 가로로 작게
         if (!p.out && !p.folded && p.cards && p.cards.length) {
-          const cw = 15, ch = 21, g = 2;
+          const cw = 15, ch = 21, g = 1;
           const totalW = p.cards.length * cw + (p.cards.length - 1) * g;
-          let hx = x - totalW / 2; const hy = y - 44;
+          let hx = x - totalW / 2; const hy = y - 49;
           for (const c of p.cards) {
             if (c.hidden || c.up === false && c.rank == null) this.drawCardBack(ctx, hx, hy, cw, ch);
             else if (c.rank != null) this.drawCard(ctx, hx, hy, cw, ch, c, !c.up);

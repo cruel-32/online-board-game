@@ -233,6 +233,20 @@ input, select {
 }
 .assist-empty { color: #9a93a8; font-size: 13px; padding: 8px 0; }
 
+/* 세븐포커: 좌석 클릭 시 카드를 내 카드(캔버스)와 비슷한 크기로 크게 보여주는 팝업용 */
+.pcard {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 54px; border-radius: 6px;
+  background: #f6f3ec; color: #20242e;
+  font-size: 17px; font-weight: 800;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+.pcard.red { color: #d1463f; }
+.pcard.back {
+  background: linear-gradient(160deg, #3a3557, #211d38);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
 /* 결과 테이블 */
 .result-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .result-table th, .result-table td { padding: 7px 6px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.08); }

@@ -310,7 +310,7 @@
         ctx.fillText(chipLabel, x, badgeY + 12);
 
         // 모은 카드는 노땡스 규칙상 전체공개이므로, 실제 숫자를 오름차순으로 아주 작게 보여준다.
-        this.drawSeatCards(ctx, p.cards, x, y - 30);
+        this.drawSeatCards(ctx, p.cards, x, y - 28);
       }
     },
 
