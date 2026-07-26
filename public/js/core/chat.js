@@ -25,7 +25,7 @@
       this.bubbleLayer = $('chat-bubbles-layer');
 
       $('btn-chat-send').addEventListener('click', () => this.sendInput());
-      $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') this.sendInput(); });
+      $('chat-input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) this.sendInput(); });
       $('btn-chat-close').addEventListener('click', () => $('chat-panel').classList.add('hidden'));
       window.addEventListener('resize', () => this.reposition());
     },
