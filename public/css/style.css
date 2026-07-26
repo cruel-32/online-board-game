@@ -222,6 +222,10 @@ input, select {
 .mini-tile.moon { color: #52d273; }
 .mini-tile.star { color: #ffd23e; }
 .mini-tile.cloud { color: #4db3ff; }
+.mini-tile.plain { color: #ffd76e; }
+.mini-tile-dim { opacity: 0.55; margin-left: -6px; }
+/* 노땡스: 좌석 클릭 시 카드를 내 카드(캔버스)와 비슷한 크기로 크게 보여주는 팝업용 */
+.mini-tile.lg { width: 40px; height: 54px; font-size: 20px; border-radius: 6px; }
 .mini-tile-top {
   background: linear-gradient(160deg, #3d2a10, #120a02);
   border: 1.4px solid #ffcf4a;

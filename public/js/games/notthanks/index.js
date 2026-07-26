@@ -40,6 +40,12 @@
     <p>덱의 24장을 모두 가져가면 게임이 끝나고 곧바로 점수를 정산합니다.</p>`;
 
   const POPUPS_HTML = `
+    <div id="player-cards-popup" class="popup dismissable hidden">
+      <div class="popup-inner panel">
+        <header><h3 id="player-cards-title">카드</h3><button class="popup-close" data-close="player-cards-popup">✕</button></header>
+        <div id="player-cards-body" class="assist-body"></div>
+      </div>
+    </div>
     <div id="rules-popup" class="popup dismissable hidden">
       <div class="popup-inner panel">
         <header><h3>게임룰</h3><button class="popup-close" data-close="rules-popup">✕</button></header>
@@ -79,10 +85,11 @@
       this.injected = Array.from(holder.children);
       this.injected.forEach((el) => screen.appendChild(el));
 
+      const callbacks = { onSeatClick: (id) => this.openPlayerCards(id) };
       if (!GameUI.canvas) {
-        GameUI.init(canvas, {});
+        GameUI.init(canvas, callbacks);
       } else {
-        GameUI.callbacks = {};
+        GameUI.callbacks = callbacks;
         GameUI.resize && GameUI.resize();
       }
 
@@ -144,6 +151,40 @@
       const pass = $('btn-pass'), take = $('btn-take');
       if (pass) pass.disabled = !(myTurn && me && me.chips > 0);
       if (take) take.disabled = !myTurn;
+    },
+
+    /* ---------- 좌석 클릭: 그 플레이어의 카드를 내 카드와 같은 크기로 크게 보기 ---------- */
+    openPlayerCards(id) {
+      if (!this.state) return;
+      const player = this.state.players.find((p) => p.id === id);
+      if (!player) return;
+      $('player-cards-title').textContent = `${esc(player.name)}님의 카드`;
+      const body = $('player-cards-body');
+      if (!player.cards.length) {
+        body.innerHTML = '<div class="assist-empty">아직 가져온 카드가 없습니다.</div>';
+        window.Modal.open('player-cards-popup');
+        return;
+      }
+      const cards = player.cards.slice().sort((a, b) => a - b);
+      const runs = [];
+      let cur = [];
+      for (const c of cards) {
+        if (cur.length && c === cur[cur.length - 1] + 1) cur.push(c);
+        else { if (cur.length) runs.push(cur); cur = [c]; }
+      }
+      if (cur.length) runs.push(cur);
+
+      const rowsHtml = runs.map((run) => {
+        const tiles = run.map((n, i) => `<span class="mini-tile lg plain${i > 0 ? ' mini-tile-dim' : ''}">${n}</span>`).join('');
+        return `<div class="assist-row">${tiles}</div>`;
+      }).join('');
+      const rawSum = cards.reduce((a, c) => a + c, 0);
+      const runSum = runs.reduce((a, run) => a + run[0], 0);
+      const score = runSum - player.chips;
+      body.innerHTML = `${rowsHtml}
+        <p class="muted small-text">카드 숫자 합계 ${rawSum} 중 연속 구간은 최저값만 계산(${runSum}) →
+        보유 칩 ${player.chips}개 차감 → 현재 예상 점수 <strong>${score}</strong></p>`;
+      window.Modal.open('player-cards-popup');
     },
 
     /* ---------- 결과 팝업 ---------- */
