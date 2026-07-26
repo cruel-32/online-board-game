@@ -28,6 +28,7 @@
       this.ctx = canvas.getContext('2d');
       this.callbacks = callbacks || {};
       const resize = () => {
+        this._layoutViewport(canvas);
         this.dpr = Math.min(window.devicePixelRatio || 1, 2);
         this.W = canvas.clientWidth;
         this.H = canvas.clientHeight;
@@ -37,7 +38,9 @@
       this.resize = resize;
       window.addEventListener('resize', resize);
       window.addEventListener('orientationchange', () => setTimeout(resize, 250));
-      if (window.ResizeObserver) new ResizeObserver(resize).observe(canvas);
+      // 캔버스 크기 자체를 이 함수가 결정하므로(letterbox), 캔버스를 관찰하면 자기 자신이 만든
+      // 변경에 다시 반응하는 순환이 생길 수 있어 부모(뷰포트 전체)를 관찰한다.
+      if (window.ResizeObserver && canvas.parentElement) new ResizeObserver(resize).observe(canvas.parentElement);
       resize();
 
       this.lastAnim = performance.now();
@@ -54,6 +57,26 @@
         requestAnimationFrame(loop);
       };
       requestAnimationFrame(loop);
+    },
+
+    /* ---------- 뷰포트 레터박스 ----------
+     * 상단(방 이름·나가기)과 하단(방향키·회전·HOLD 버튼) 영역은 #game-hud가 화면 물리적
+     * 모서리에 그대로 고정해 두고, 게임 화면(캔버스)만 그 사이 안전 영역에 맞춰 줄어들게 한다.
+     * 가로/세로 각각 독립적으로 상한만 둘 뿐 특정 비율로 억지로 늘리거나 찌그러뜨리지 않으므로
+     * (내부적으로 셀은 항상 정사각형으로 그려짐) 화면 비율이 자연스럽게 유지된다.
+     */
+    _layoutViewport(canvas) {
+      const parent = canvas.parentElement;
+      if (!parent) return;
+      const vw = parent.clientWidth, vh = parent.clientHeight;
+      const topReserve = 34;                 // 상단 방 이름/나가기 바(실측 바닥 y≈29 + 여유)
+      const bottomReserve = vw >= 700 ? 128 : 98; // 하단 방향키·회전·HOLD 버튼 높이(실측값 + 여유, 태블릿 확대 breakpoint와 동일)
+      const w = Math.min(vw, 900);
+      const h = Math.max(160, vh - topReserve - bottomReserve);
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      canvas.style.left = `${Math.round((vw - w) / 2)}px`;
+      canvas.style.top = `${topReserve}px`;
     },
 
     startLocal(seed) {
@@ -92,15 +115,16 @@
     _sound(name) { if (window.Sound && window.Sound[name]) window.Sound[name](); },
 
     /* ---------- 레이아웃 ----------
-     * 화면 상단(방 이름·나가기 버튼)·하단(터치 조작 버튼)은 캔버스 위에 별도 HTML로 얹히므로,
-     * 보드/패널이 그 영역을 가리지 않도록 위아래 여백(topReserve/bottomReserve)을 확보한다.
+     * 화면 상단(방 이름·나가기 버튼)·하단(터치 조작 버튼)은 캔버스 바깥의 별도 HTML(#game-hud)이
+     * 담당하고, 캔버스 자체는 _layoutViewport()가 이미 그 영역을 피해 크기·위치를 잡아 두므로,
+     * 여기서는 캔버스 내부의 작은 여백만 두면 된다(위아래 버튼 회피용 큰 여백은 중복 확보하지 않음).
      */
     layout() {
       const oppCount = this.opponents.length;
       const oppPanelW = oppCount > 0 ? Math.min(150, Math.max(96, this.W * 0.16)) : 0;
       const sidePanelW = Math.min(76, Math.max(52, this.W * 0.07)); // 홀드/넥스트 패널 폭
       const margin = 10;
-      const topReserve = 34;
+      const topReserve = 10;
       const bottomReserve = 8;
       const boardAreaW = this.W - oppPanelW - sidePanelW * 2 - margin * 4;
       const boardAreaH = this.H - topReserve - bottomReserve - margin * 2;

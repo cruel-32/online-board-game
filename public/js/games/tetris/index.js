@@ -130,11 +130,9 @@
       this.injected = Array.from(holder.children);
       this.injected.forEach((el) => screen.appendChild(el));
 
-      // 넓은 화면(태블릿 등)에서 보드만 한없이 커지고 버튼은 그대로라 화면 가장자리에 붙어
-      // 보이는 문제를 막기 위해, 테트리스 화면(캔버스+HUD)에 최대 폭을 두고 가운데 정렬한다.
-      canvas.classList.add('tetris-viewport');
-      const gameHud = document.getElementById('game-hud');
-      if (gameHud) gameHud.classList.add('tetris-viewport');
+      // 캔버스(게임 화면) 크기·위치는 UI._layoutViewport()가 상단 바/하단 버튼 영역을 피해
+      // 직접 계산한다(TetrisUI.init 내부). 버튼(#game-hud)은 화면 물리적 모서리에 그대로 둔다.
+      canvas.classList.add('tetris-viewport'); // 표시용 마커
 
       this.bindings = loadBindings();
       UI.init(canvas, { onLock: (ev) => this._onLock(ev) });
@@ -149,9 +147,12 @@
       if (this.keyHandlerUp) window.removeEventListener('keyup', this.keyHandlerUp);
       this.keyHandlerDown = null; this.keyHandlerUp = null;
       const canvas = document.getElementById('game-canvas');
-      if (canvas) canvas.classList.remove('tetris-viewport');
-      const gameHud = document.getElementById('game-hud');
-      if (gameHud) gameHud.classList.remove('tetris-viewport');
+      if (canvas) {
+        canvas.classList.remove('tetris-viewport');
+        // 다음에 마운트될 다른 게임(전체 화면 캔버스)을 위해 인라인 스타일을 되돌린다.
+        canvas.style.width = ''; canvas.style.height = '';
+        canvas.style.left = ''; canvas.style.top = '';
+      }
       this.injected.forEach((el) => el.remove());
       this.injected = [];
       if (this.hudSlot) this.hudSlot.innerHTML = '';

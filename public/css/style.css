@@ -144,14 +144,10 @@ input, select {
 #game-hud { position: absolute; inset: 0; pointer-events: none; }
 #game-hud .btn { pointer-events: auto; }
 
-/* 테트리스 전용: 넓은 화면(태블릿 등)에서 보드만 한없이 커지는 것을 막기 위해 캔버스+HUD에
-   최대 폭을 두고 가운데 정렬한다(버튼을 키워도 보드와 겹치지 않도록 항상 여백을 확보). 좁은
-   화면(폰)에서는 100%가 이미 상한보다 작아 사실상 지금과 동일하게 동작한다. */
-#game-canvas.tetris-viewport, #game-hud.tetris-viewport {
-  left: 50%; right: auto;
-  transform: translateX(-50%);
-  width: 100%; max-width: 900px;
-}
+/* 테트리스 전용: 캔버스 자체의 가로/세로 상한 및 위치는 ui.js의 _layoutViewport()가 인라인
+   스타일로 직접 계산해서 지정한다(상단 방 이름 바·하단 버튼 영역과 절대 겹치지 않도록 세로
+   여백까지 고려해야 해서 CSS만으로는 어려움). #game-hud(버튼)는 그대로 화면 물리적 모서리에
+   고정해 둔다 — .tetris-viewport 클래스는 표시용 마커일 뿐 별도 스타일은 없다. */
 .hud-top-left {
   position: absolute; top: max(6px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left));
   display: flex; align-items: center; gap: 8px; font-size: 12px; color: #b7aec5;
