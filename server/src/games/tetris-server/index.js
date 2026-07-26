@@ -25,24 +25,38 @@ function flattenBoard(board2d) {
   return flat;
 }
 
+// ev.locked인 경우 여기서 game.version을 올린다(Game.applyLockResult 내부에서 처리).
 function handleLock(game, pid, ev) {
   if (ev && ev.locked) game.applyLockResult(pid, ev);
 }
 
-// 방 전체 실시간 루프: 살아있는 전원의 엔진에 중력/락딜레이를 진행시키고 매 틱 상태를 브로드캐스트한다.
-// 사람의 입력(이동/회전/하드드롭)은 game_action이 즉시 반영하므로, 이 루프는 오직
-// "시간이 흘러 자연히 낙하/고정되는 것"만 담당한다. room.game이 바뀌거나 끝나면 스스로 멈춘다.
+// 방 전체 실시간 루프: 살아있는 전원의 엔진에 중력/락딜레이를 진행시키고, 상태(game.version)가
+// 실제로 바뀐 틱에만 브로드캐스트한다. 사람의 입력(이동/회전/하드드롭)은 game_action이 즉시
+// 반영하므로, 이 루프는 "시간이 흘러 자연히 낙하/고정되는 것"만 담당한다.
+// room.game이 바뀌거나 끝나면 스스로 멈춘다.
+//
+// 성능 메모: 기본 중력(900ms/칸)에서는 한 칸 내려가는 데 18틱(900/50)이 걸리므로, 아무 입력이
+// 없으면 18틱 중 17틱은 좌표가 그대로다 — game.version 비교로 이런 "변화 없는 틱"의 브로드캐스트를
+// 건너뛰어 유휴 시 네트워크 트래픽을 크게 줄인다.
 function scheduleTick(game, room, hooks) {
   setTimeout(() => {
     if (room.game !== game || room.state !== 'playing' || game.finished) return;
-    for (const pid of [...game.alive]) {
+    for (const pid of game.alive) { // Set을 매 틱 배열로 복사하지 않는다(현재 진행 중인 요소 삭제는 안전함)
       const engine = game.engines.get(pid);
+      const st = engine.getState();
+      const beforeY = st.cur ? st.cur.y : null;
       const ev = engine.tick(TICK_MS);
+      // 락은 handleLock→applyLockResult가 자체적으로 version을 올리므로, 여기서는
+      // "락 없이 중력만으로 위치가 바뀐" 경우만 추가로 반영한다(중복 카운트 방지).
+      if (!ev.locked && (st.cur ? st.cur.y : null) !== beforeY) game.version++;
       handleLock(game, pid, ev);
       if (game.finished) break;
     }
     if (game.finished) { hooks.finish(); return; }
-    hooks.broadcast();
+    if (game.version !== game._lastBroadcastVersion) {
+      game._lastBroadcastVersion = game.version;
+      hooks.broadcast();
+    }
     scheduleTick(game, room, hooks);
   }, TICK_MS);
 }
@@ -99,17 +113,20 @@ module.exports = {
     if (!engine) throw new Error('플레이어를 찾을 수 없습니다.');
     if (!game.alive.has(playerId) || game.finished) return { ended: game.finished };
 
-    let ev = null;
+    let ev = null, changed = false;
     switch (kind) {
-      case 'moveLeft': engine.moveLeft(); break;
-      case 'moveRight': engine.moveRight(); break;
-      case 'softDrop': engine.softDrop(); break;
-      case 'rotateCW': engine.rotateCW(); break;
-      case 'rotateCCW': engine.rotateCCW(); break;
-      case 'hold': engine.hold(); break;
-      case 'hardDrop': ev = engine.hardDrop(); break;
+      case 'moveLeft': changed = engine.moveLeft(); break;
+      case 'moveRight': changed = engine.moveRight(); break;
+      case 'softDrop': changed = engine.softDrop(); break;
+      case 'rotateCW': changed = engine.rotateCW(); break;
+      case 'rotateCCW': changed = engine.rotateCCW(); break;
+      case 'hold': changed = engine.hold(); break;
+      case 'hardDrop': ev = engine.hardDrop(); changed = true; break;
       default: throw new Error('알 수 없는 동작입니다.');
     }
+    // 락은 handleLock→applyLockResult가 자체적으로 version을 올리므로, 락 없이 성공한
+    // 이동/회전/홀드만 여기서 추가로 반영한다(실패한 입력은 화면이 안 바뀌므로 반영하지 않음).
+    if (changed && !(ev && ev.locked)) game.version++;
     handleLock(game, playerId, ev);
     return { ended: game.finished };
   },
@@ -134,6 +151,31 @@ module.exports = {
     const selfEvents = myEvents.slice();
     myEvents.length = 0;
 
+    // broadcastGame()은 사람 뷰어 수만큼 serialize()를 반복 호출하는데(rooms.js), 보드 펼치기·ghostY
+    // 계산처럼 뷰어와 무관하게 항상 같은 값(엔진 파생 정보)을 매번 다시 계산하면 낭비다.
+    // game.version이 안 바뀐 한(=이번 브로드캐스트 라운드 내) 캐시를 그대로 재사용한다.
+    // (room.players의 name/connected/inVoice/micMuted처럼 game.version과 무관하게 바뀔 수 있는
+    //  값은 캐시하지 않고 매번 새로 읽어 stale 데이터가 섞이지 않게 한다.)
+    if (game._snapshotVersion !== game.version) {
+      game._snapshotVersion = game.version;
+      game._snapshotCache = new Map(game.playerIds.map((pid) => {
+        const engine = game.engines.get(pid);
+        const st = engine ? engine.getState() : null;
+        const s = game.stats.get(pid) || {};
+        return [pid, {
+          linesCleared: s.linesCleared || 0,
+          garbageSent: s.garbageSent || 0,
+          garbageReceived: s.garbageReceived || 0,
+          board: st ? flattenBoard(st.board) : null,
+          cur: st && st.cur ? { type: st.cur.type, rot: st.cur.rot, x: st.cur.x, y: st.cur.y } : null,
+          ghostY: st && st.cur ? engine.ghostY() : null,
+          holdType: st ? st.hold : null,
+          nextTypes: st ? st.queue.slice(0, 5) : [],
+          incomingGarbageCount: st ? st.incomingGarbage.reduce((sum, g) => sum + g.lines, 0) : 0,
+        }];
+      }));
+    }
+
     return {
       gameId: 'tetris-server',
       roomId: room.id,
@@ -145,25 +187,12 @@ module.exports = {
       incomingAttacks,
       selfEvents,
       // 서버가 모든 진실을 갖고 있으므로(클라이언트 권위 버전과 달리) 내 보드도 여기 그대로 포함한다.
-      players: room.players.map((p) => {
-        const engine = game.engines.get(p.id);
-        const st = engine ? engine.getState() : null;
-        const s = game.stats.get(p.id) || {};
-        return {
-          id: p.id, name: p.name, connected: p.connected,
-          alive: game.alive.has(p.id),
-          linesCleared: s.linesCleared || 0,
-          garbageSent: s.garbageSent || 0,
-          garbageReceived: s.garbageReceived || 0,
-          board: st ? flattenBoard(st.board) : null,
-          cur: st && st.cur ? { type: st.cur.type, rot: st.cur.rot, x: st.cur.x, y: st.cur.y } : null,
-          ghostY: st && st.cur ? engine.ghostY() : null,
-          holdType: st ? st.hold : null,
-          nextTypes: st ? st.queue.slice(0, 5) : [],
-          incomingGarbageCount: st ? st.incomingGarbage.reduce((sum, g) => sum + g.lines, 0) : 0,
-          inVoice: !!p.inVoice, micMuted: !!p.micMuted,
-        };
-      }),
+      players: room.players.map((p) => ({
+        id: p.id, name: p.name, connected: p.connected,
+        alive: game.alive.has(p.id),
+        ...game._snapshotCache.get(p.id),
+        inVoice: !!p.inVoice, micMuted: !!p.micMuted,
+      })),
     };
   },
 

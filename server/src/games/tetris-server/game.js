@@ -29,12 +29,16 @@ class Game {
     this.eliminationOrder = [];
     this.finished = false;
     this.winnerId = null;
+    // 눈에 보이는 상태가 바뀔 때마다 +1(락/가비지/탈락 = 여기서, 락 없는 이동/자연낙하 = index.js에서).
+    // index.js가 이 값으로 "이번 틱에 브로드캐스트할 필요가 있는지"와 "직렬화 캐시가 아직 유효한지"를 판단한다.
+    this.version = 0;
   }
 
   eliminate(pid) {
     if (!this.alive.has(pid) || this.finished) return;
     this.alive.delete(pid);
     this.eliminationOrder.push(pid);
+    this.version++;
     this.checkEnd();
   }
 
@@ -52,6 +56,7 @@ class Game {
    */
   applyLockResult(pid, ev) {
     if (this.finished || !this.alive.has(pid) || !ev || !ev.locked) return;
+    this.version++;
     const s = this.stats.get(pid);
     s.linesCleared += Math.max(0, ev.linesCleared || 0);
     this.selfEvents.get(pid).push({

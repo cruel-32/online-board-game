@@ -13,7 +13,12 @@ app.use(express.static(path.join(__dirname, '../../public')));
 app.get('/healthz', (req, res) => res.json({ ok: true }));
 
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({
+  server,
+  // 반복되는 키 이름·null 값이 많은 게임 상태 JSON은 압축률이 좋다(특히 테트리스 보드 스냅샷).
+  // threshold로 아주 짧은 메시지(채팅 등)는 압축 오버헤드가 이득보다 클 수 있어 그대로 보낸다.
+  perMessageDeflate: { threshold: 1024 },
+});
 wss.on('connection', (ws) => rooms.attach(ws));
 
 // 죽은 연결 정리

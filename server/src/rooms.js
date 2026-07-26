@@ -510,7 +510,10 @@ const handlers = {
     if (room.state !== 'playing' || !room.game) throw new Error('게임 중이 아닙니다.');
     const r = room.engine.applyAction(room.game, room, client.clientId, msg.action || {});
     if (r && r.ended) return finishGame(room);
-    broadcastGame(room);
+    // 실시간 게임(startRealtime 보유, 예: 테트리스)은 자체 tick 루프가 상태 변화를 감지해
+    // 최대 한 틱(수십ms) 이내에 알아서 브로드캐스트한다. 여기서 매 액션마다 즉시 또 브로드캐스트하면
+    // 같은 상태를 두 번 내보내게 되어(DAS/ARR 연타 시 실측 초당 메시지가 거의 2배로 뛰었다) 생략한다.
+    if (!room.engine.startRealtime) broadcastGame(room);
     scheduleBotTurn(room);
   },
 
