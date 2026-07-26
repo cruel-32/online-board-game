@@ -334,4 +334,117 @@ for (const pc of [3, 4, 5]) {
   console.log('✅ 노땡스 점수 계산(연속 구간 최저값 합산)');
 }
 
+/* ---------- 15: 테트리스 — 공용 코어(7-bag/킥) + 클라이언트 엔진(순수 로직) ---------- */
+{
+  const core = require('../public/shared/tetris-core.js');
+  const { createEngine, cellsFor, COLS, ROWS } = require('../public/js/games/tetris/engine.js');
+
+  // 7-bag: 같은 시드는 같은 순서, 매 7개 구간마다 7종류가 모두 한 번씩만 나온다
+  {
+    const gen1 = core.createBagGenerator(12345);
+    const gen2 = core.createBagGenerator(12345);
+    const seq1 = Array.from({ length: 35 }, () => gen1());
+    const seq2 = Array.from({ length: 35 }, () => gen2());
+    assert.deepEqual(seq1, seq2, '같은 시드는 항상 같은 조각 순서');
+    for (let i = 0; i < 35; i += 7) {
+      const bag = seq1.slice(i, i + 7);
+      assert.equal(new Set(bag).size, 7, `bag ${i / 7}에 7종류가 모두 있어야 함`);
+    }
+    console.log('✅ 테트리스 7-bag 결정론적 시드 + 종류 보장');
+  }
+
+  // 가비지 테이블
+  {
+    assert.deepEqual([1, 2, 3, 4].map(core.garbageForClear), [0, 1, 2, 4], '싱글/더블/트리플/테트리스 가비지 값');
+    console.log('✅ 테트리스 가비지 테이블');
+  }
+
+  // 줄 삭제: 세로 I 조각으로 마지막 한 칸을 채우면 그 줄이 삭제되고 위쪽이 내려온다
+  {
+    const e = createEngine(1);
+    const s = e.getState();
+    for (let c = 1; c < COLS; c++) s.board[ROWS - 1][c] = 'X';
+    s.cur = { type: 'I', rot: 1, x: -2, y: 0 }; // 0번 열에 세로로 떨어짐
+    const r = e.hardDrop();
+    assert.equal(r.linesCleared, 1, '완성된 한 줄이 삭제됨');
+    assert.equal(s.board.length, ROWS, '삭제 후에도 보드 높이는 유지(위에 빈 줄 보충)');
+    console.log('✅ 테트리스 줄 삭제');
+  }
+
+  // 가비지 삽입: 구멍 열을 제외하고 채워지며, 보드 높이는 유지된다
+  {
+    const e = createEngine(2);
+    const s = e.getState();
+    e.queueGarbage(3, 4);
+    e.hardDrop(); // 아무 조각이나 고정시켜 큐에 쌓인 가비지를 반영
+    assert.equal(s.garbageReceivedTotal, 3, '받은 가비지 누적');
+    for (let i = ROWS - 3; i < ROWS; i++) {
+      assert.equal(s.board[i][4], null, '구멍 열은 비어 있어야 함');
+      assert.equal(s.board[i].filter((c) => c).length, COLS - 1, '구멍 열 제외 나머지는 모두 채워짐');
+    }
+    assert.equal(s.board.length, ROWS, '가비지 삽입 후에도 보드 높이 유지');
+    console.log('✅ 테트리스 가비지 삽입(구멍 열)');
+  }
+
+  // 탑아웃: 다음 조각의 스폰 칸이 막혀 있으면 즉시 탈락 처리
+  {
+    const e = createEngine(5);
+    const s = e.getState();
+    const nextType = s.queue[0];
+    for (const [cx, cy] of cellsFor(nextType, 0, 3, 0)) if (cy >= 0) s.board[cy][cx] = 'X';
+    const r = e.hardDrop();
+    assert.equal(r.topOut, true, '스폰 불가 시 탑아웃');
+    assert.equal(s.topOut, true);
+    console.log('✅ 테트리스 탑아웃 판정');
+  }
+
+  // 락딜레이: 바닥에 닿으면 카운트다운, 이동/회전 시 리셋(상한 있음), 시간이 다 되면 강제 고정
+  {
+    const e = createEngine(7);
+    const s = e.getState();
+    while (e.softDrop()) { /* 바닥까지 내려 grounded 상태로 만듦 */ }
+    assert.equal(s.grounded, true);
+    assert.equal(e.tick(300).locked, false, '락딜레이(500ms) 이내면 아직 안 잠김');
+    e.moveLeft(); // 리셋
+    assert.equal(e.tick(300).locked, false, '리셋 후 300ms는 아직 안 잠김');
+    assert.equal(e.tick(300).locked, true, '리셋 후 총 600ms 경과하면 잠김');
+    console.log('✅ 테트리스 락딜레이(리셋 포함)');
+  }
+
+  // 홀드: 고정되기 전까지는 재홀드 불가, 고정 후에는 다시 가능
+  {
+    const e = createEngine(9);
+    const s = e.getState();
+    assert.equal(e.hold(), true, '첫 홀드는 성공');
+    assert.equal(e.hold(), false, '같은 조각이 고정되기 전 재홀드는 실패');
+    e.hardDrop();
+    assert.equal(s.canHold, true, '고정 후에는 다시 홀드 가능');
+    console.log('✅ 테트리스 홀드(고정 전 재홀드 금지)');
+  }
+
+  // 퍼징: 무작위 입력을 오래 반복해도 예외 없이 동작(충돌/경계 처리 검증)
+  {
+    for (let trial = 0; trial < 10; trial++) {
+      const e = createEngine(1000 + trial);
+      const s = e.getState();
+      let steps = 0, topOuts = 0;
+      while (steps++ < 3000) {
+        const r = Math.random();
+        if (r < 0.2) e.moveLeft();
+        else if (r < 0.4) e.moveRight();
+        else if (r < 0.55) e.rotateCW();
+        else if (r < 0.65) e.rotateCCW();
+        else if (r < 0.75) e.hold();
+        else if (r < 0.85) e.softDrop();
+        else { const res = e.hardDrop(); if (res.topOut) { topOuts++; break; } }
+        e.tick(50);
+        // 보드 크기 불변 검증(가비지 삽입/줄삭제 어느 경우에도 항상 ROWS를 유지해야 함)
+        assert.equal(s.board.length, ROWS, '보드 높이는 항상 20 유지');
+        assert.equal(s.board.every((row) => row.length === COLS), true, '모든 행은 항상 10칸 유지');
+      }
+    }
+    console.log('✅ 테트리스 무작위 입력 퍼징(3000스텝 × 10회, 충돌/경계 이상 없음)');
+  }
+}
+
 console.log('\n🎉 모든 테스트 통과');

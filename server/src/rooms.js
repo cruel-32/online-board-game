@@ -173,18 +173,28 @@ function leaveRoom(clientId) {
   if (idx === -1) return;
 
   if (room.state === 'playing') {
-    // 게임 중 이탈 → 해당 좌석을 봇으로 전환해 게임 유지
     const p = room.players[idx];
-    p.isBot = true;
     p.connected = false;
     p.inVoice = false;
     p.micMuted = false;
-    p.name = p.name + '(봇)';
-    p.ready = true;
-    reassignHost(room);
-    broadcastRoom(room);
-    broadcastGame(room);
-    scheduleBotTurn(room);
+    if (room.engine.handleDisconnect) {
+      // 봇 전환이 불가능한 실시간 게임(예: 테트리스) — 엔진이 알아서 탈락 등으로 처리
+      const r = room.engine.handleDisconnect(room.game, room, clientId);
+      reassignHost(room);
+      broadcastRoom(room);
+      broadcastGame(room);
+      if (r && r.ended) finishGame(room);
+      else scheduleBotTurn(room);
+    } else {
+      // 게임 중 이탈 → 해당 좌석을 봇으로 전환해 게임 유지
+      p.isBot = true;
+      p.name = p.name + '(봇)';
+      p.ready = true;
+      reassignHost(room);
+      broadcastRoom(room);
+      broadcastGame(room);
+      scheduleBotTurn(room);
+    }
   } else {
     room.players.splice(idx, 1);
     reassignHost(room);
@@ -433,6 +443,7 @@ const handlers = {
   add_bot(ws, msg, client) {
     const room = mustBeHost(client);
     if (room.state !== 'waiting') throw new Error('대기 중에만 가능합니다.');
+    if (room.engine.meta.noBots) throw new Error('이 게임은 봇을 지원하지 않습니다.');
     if (room.players.length >= room.maxPlayers) throw new Error('자리가 없습니다.');
     const used = room.players.filter((p) => p.isBot).length;
     const bot = {
@@ -602,8 +613,16 @@ function attach(ws) {
         reassignHost(room);
         broadcastRoom(room);
         if (room.state === 'playing') {
-          broadcastGame(room);
-          scheduleBotTurn(room);
+          if (room.engine.handleDisconnect) {
+            // 봇 전환이 불가능한 실시간 게임(예: 테트리스) — 엔진이 알아서 탈락 등으로 처리
+            const r = room.engine.handleDisconnect(room.game, room, clientId);
+            broadcastGame(room);
+            if (r && r.ended) finishGame(room);
+            else scheduleBotTurn(room);
+          } else {
+            broadcastGame(room);
+            scheduleBotTurn(room);
+          }
         }
         checkRoomEmpty(room);
       }

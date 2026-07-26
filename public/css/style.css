@@ -176,6 +176,10 @@ input, select {
 }
 .hud-btn-main.pass { background: linear-gradient(180deg, #5a3550, #3a2238); }
 
+/* 테트리스: 좌우 이동/회전 4버튼을 한 줄에 작게(터치 조작용) */
+.tet-dpad { display: flex; gap: 4px; margin-bottom: 6px; touch-action: none; }
+.tet-dpad .btn { width: 34px; height: 34px; padding: 0; font-size: 15px; }
+
 /* ---- 팝업 ---- */
 .popup {
   position: absolute; inset: 0; z-index: 50;

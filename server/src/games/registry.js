@@ -8,8 +8,9 @@ const uno = require('./uno');
 const holdem = require('./holdem');
 const seven = require('./seven');
 const notthanks = require('./notthanks');
+const tetris = require('./tetris');
 
-const engines = { lexio, felicity, uno, holdem, seven, notthanks };
+const engines = { lexio, felicity, uno, holdem, seven, notthanks, tetris };
 
 const DEFAULT_GAME = 'lexio';
 
