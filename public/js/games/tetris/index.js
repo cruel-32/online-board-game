@@ -59,7 +59,7 @@
   }
 
   const HUD_HTML = `
-    <div class="hud-left">
+    <div class="hud-left tet-hud-left">
       <div class="tet-dpad">
         <button id="tet-drop2" class="btn hud-btn tet-dpad-up">▲</button>
         <button id="tet-left" class="btn hud-btn tet-dpad-left">◀</button>
@@ -67,7 +67,7 @@
         <button id="tet-right" class="btn hud-btn tet-dpad-right">▶</button>
       </div>
     </div>
-    <div class="hud-right">
+    <div class="hud-right tet-hud-right">
       <div class="hud-secondary">
         ${window.Platform && window.Platform.isKeyboardPlatform() ? '<button id="tet-keybind" class="btn hud-btn">버튼설정</button>' : ''}
       </div>
@@ -130,6 +130,12 @@
       this.injected = Array.from(holder.children);
       this.injected.forEach((el) => screen.appendChild(el));
 
+      // 넓은 화면(태블릿 등)에서 보드만 한없이 커지고 버튼은 그대로라 화면 가장자리에 붙어
+      // 보이는 문제를 막기 위해, 테트리스 화면(캔버스+HUD)에 최대 폭을 두고 가운데 정렬한다.
+      canvas.classList.add('tetris-viewport');
+      const gameHud = document.getElementById('game-hud');
+      if (gameHud) gameHud.classList.add('tetris-viewport');
+
       this.bindings = loadBindings();
       UI.init(canvas, { onLock: (ev) => this._onLock(ev) });
       this._wire();
@@ -142,6 +148,10 @@
       if (this.keyHandlerDown) window.removeEventListener('keydown', this.keyHandlerDown);
       if (this.keyHandlerUp) window.removeEventListener('keyup', this.keyHandlerUp);
       this.keyHandlerDown = null; this.keyHandlerUp = null;
+      const canvas = document.getElementById('game-canvas');
+      if (canvas) canvas.classList.remove('tetris-viewport');
+      const gameHud = document.getElementById('game-hud');
+      if (gameHud) gameHud.classList.remove('tetris-viewport');
       this.injected.forEach((el) => el.remove());
       this.injected = [];
       if (this.hudSlot) this.hudSlot.innerHTML = '';
