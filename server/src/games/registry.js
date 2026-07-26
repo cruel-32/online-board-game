@@ -9,8 +9,9 @@ const holdem = require('./holdem');
 const seven = require('./seven');
 const notthanks = require('./notthanks');
 const tetris = require('./tetris');
+const tetrisServer = require('./tetris-server');
 
-const engines = { lexio, felicity, uno, holdem, seven, notthanks, tetris };
+const engines = { lexio, felicity, uno, holdem, seven, notthanks, tetris, 'tetris-server': tetrisServer };
 
 const DEFAULT_GAME = 'lexio';
 

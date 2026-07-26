@@ -258,7 +258,9 @@ function startGame(room) {
   broadcastGame(room);
   broadcastLobby();
   scheduleBotTurn(room);
-  if (engine.startBots) engine.startBots(room, { broadcast: () => broadcastGame(room), finish: () => finishGame(room) });
+  const rtHooks = { broadcast: () => broadcastGame(room), finish: () => finishGame(room) };
+  if (engine.startBots) engine.startBots(room, rtHooks);
+  if (engine.startRealtime) engine.startRealtime(room, rtHooks);
 }
 
 function scheduleBotTurn(room) {

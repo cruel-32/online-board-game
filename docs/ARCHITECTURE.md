@@ -59,6 +59,15 @@ module.exports = {
   펠리시티는 인스턴스=9라운드 전체를 내부에서 진행하고 마지막에만 `ended:true`를 반환한다(코인은 인스턴스 내부).
 - 규칙 계산은 `public/shared/<game>-core.js`(서버·클라 공용, 순수 함수)에 두고 엔진/봇/클라가 재사용한다.
 
+### 실시간 게임의 선택적 훅 — `startBots` / `startRealtime`
+턴제 게임은 `currentActor`/`botAction`으로 충분하지만, 테트리스류(턴 없이 전원이 동시에 진행)는
+`currentActor`가 항상 `null`이라 이 스케줄러가 개입하지 않는다. 대신 `rooms.js`의 `startGame()`이
+매치 시작 직후 아래 두 훅이 있으면 한 번씩 호출한다(둘 다 `{ broadcast(), finish() }`를 받는다).
+- `startBots(room, hooks)` — 방에 있는 봇마다 자체 타이머로 스스로 플레이를 시작시킨다(테트리스: 클라이언트 권위 버전).
+- `startRealtime(room, hooks)` — 방 전체를 진행시키는 루프를 시작한다(테트리스(서버권위): 전원의 물리를 서버가 틱마다 계산).
+
+이 두 훅의 유무 자체가 §"테트리스 두 버전 비교"의 아키텍처 차이를 코드 레벨에서 드러낸다.
+
 ### 제네릭 메시지(클라 → 서버)
 `hello`, `set_name`, `create_room{gameId}`, `join_room`, `leave_room`, `set_game{gameId}`(방장),
 `set_max`, `set_option{key,value}`(방장), `add_bot`/`remove_bot`/`kick`, `ready`, `start`,
@@ -114,6 +123,23 @@ module.exports = {
 공용 계층(방/로비/채팅/음성/봇/화면 셸)은 건드릴 필요가 없다.
 
 ---
+
+## 테트리스 두 버전 비교 — 클라이언트 권위 vs 서버 권위
+같은 규칙(배틀로얄·가비지 공격·최후 생존)을 두 가지 네트워킹 아키텍처로 구현해 나란히 비교할 수 있게 했다.
+
+| | `games/tetris`(클라이언트 권위) | `games/tetris-server`(서버 권위) |
+|---|---|---|
+| 물리(중력·충돌·회전) 계산 위치 | 클라이언트 로컬(각자 `TetrisEngine` 인스턴스) | 서버(플레이어당 `TetrisEngine` 인스턴스를 서버가 직접 보유) |
+| 클라이언트가 서버에 보내는 것 | "조각 고정" 결과 이벤트(초당 인당 1~3회) | 키 입력 그 자체(moveLeft 등, 누를 때마다) |
+| 서버가 클라이언트에 보내는 것 | 상대 보드 스냅샷(상대가 조각을 고정할 때만) | 전원의 보드+현재 조각 위치(고정 주기 20Hz + 액션마다) |
+| 가비지 반영 | `pendingGarbage` 중계 큐(다음 setState에서 로컬 엔진에 적용) | 대상 엔진에 서버가 즉시 `queueGarbage()`(중계 불필요) |
+| 입력 반응 지연 | 없음(항상 로컬 즉시 처리) | 네트워크 왕복(RTT) 만큼 — 시각적 반영은 다음 브로드캐스트를 기다려야 함 |
+| 서버 부하 | 조각 고정 시에만 이벤트 처리(사실상 idle) | 방마다 20Hz 틱 루프가 상시 전원의 중력을 계산 |
+| 봇 실행 방식 | `startBots` — 봇마다 즉시 하드드롭하는 독립 타이머 | `startRealtime` — 같은 틱 루프가 봇 엔진도 함께 진행시키고, 봇 결정 타이머는 `bot.js`를 그대로 재사용 |
+
+두 게임 모두 `server/src/games/tetris/bot.js`(배치 탐색 휴리스틱)와 `public/js/games/tetris/engine.js`
+(순수 물리 엔진, UMD라 서버 쪽에서도 그대로 `require`)를 공유한다 — 차이는 오직 "누가, 언제 그 엔진을
+호출하는가"에 있다. 직접 두 방을 만들어 플레이해 보면 입력 반응성·네트워크 트래픽 체감 차이를 확인할 수 있다.
 
 ## 영속화 (선택)
 `store.js`가 `DATABASE_URL`/`REDIS_URL`이 있을 때만 활성화된다. `round_results` 테이블에 `game_id`
