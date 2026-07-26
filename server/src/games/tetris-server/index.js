@@ -61,7 +61,7 @@ function scheduleBotMove(game, room, botId, engine, hooks, delayMs) {
 module.exports = {
   meta: {
     id: 'tetris-server',
-    name: '테트리스(서버권위)',
+    name: '테트리스', // 사용자에게는 그냥 "테트리스"로 노출(기존 클라이언트 권위 버전은 registry.js에서 목록 제외)
     minPlayers: 2,
     maxPlayers: 4,
     settleDelay: 2500,

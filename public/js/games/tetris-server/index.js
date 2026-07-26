@@ -98,7 +98,7 @@
 
   const TetrisServer = {
     id: 'tetris-server',
-    name: '테트리스(서버권위)',
+    name: '테트리스',
     ctx: null,
     state: null,
     lastRoundNo: null,
@@ -112,8 +112,7 @@
     rebindListener: null,
 
     renderSetup(container) {
-      container.innerHTML = `<p class="muted small-text">테트리스(서버권위)는 2~4인 · 실시간 배틀로얄 ·
-        일반 테트리스와 규칙은 동일하지만 서버가 물리를 전부 계산하고 클라이언트는 입력만 보냅니다(아키텍처 비교용) · 봇 추가 가능.</p>`;
+      container.innerHTML = `<p class="muted small-text">테트리스는 2~4인 · 실시간 배틀로얄(가비지 공격, 최후 생존) · 봇 추가 가능.</p>`;
     },
 
     mount({ canvas, hudSlot, ctx }) {
@@ -154,7 +153,7 @@
       this.state = null; this.lastRoundNo = null;
     },
 
-    topBarText(state) { return `${state.roomName} · 테트리스(서버권위)`; },
+    topBarText(state) { return `${state.roomName} · 테트리스`; },
 
     setState(state) {
       const prev = this.state;
