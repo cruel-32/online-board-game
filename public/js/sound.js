@@ -232,10 +232,21 @@
       if (isGo) tone(880, { type: 'sine', dur: 0.2, gain: 0.22, endFreq: 1200 });
       else tone(520, { type: 'sine', dur: 0.1, gain: 0.16 });
     },
-    // 테트리스: 상대에게 가비지(방해줄)를 받았을 때 경고음
-    garbageWarning() {
-      tone(300, { type: 'sawtooth', dur: 0.12, gain: 0.14, endFreq: 180 });
-      tone(300, { type: 'sawtooth', dur: 0.12, gain: 0.14, endFreq: 180, delay: 0.14 });
+    // 테트리스: 내가 상대에게 공격을 보냄 — 통쾌한 상승 아르페지오(양 많을수록 더 강하게)
+    attackSent(amount) {
+      const n = Math.max(1, Math.min(amount || 1, 6));
+      for (let i = 0; i < n; i++) {
+        tone(700 + i * 90, { type: 'square', dur: 0.09, gain: 0.16, endFreq: 900 + i * 90, delay: i * 0.045 });
+      }
+      if (n >= 4) slamHit();
+    },
+    // 테트리스: 상대에게 공격을 받음 — 불길하게 내려앉는 저음 펄스(양 많을수록 더 위협적으로)
+    attackReceived(amount) {
+      const n = Math.max(1, Math.min(amount || 1, 6));
+      for (let i = 0; i < n; i++) {
+        tone(220 - i * 12, { type: 'sawtooth', dur: 0.16, gain: 0.2, endFreq: 90, delay: i * 0.07 });
+      }
+      if (n >= 4) slamHit();
     },
     // 테트리스: 내가 탈락(보드가 가득 참) — 낮게 떨어지는 톤
     eliminated() {

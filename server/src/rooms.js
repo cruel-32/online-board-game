@@ -220,6 +220,9 @@ function checkRoomEmpty(room, immediate) {
   const destroy = () => {
     for (const p of room.players) playerRoom.delete(p.id);
     rooms.delete(room.id);
+    // 테트리스 봇처럼 room.botTimer 하나로 추적되지 않는 개별 재귀 타이머(초당 자가 재예약)가
+    // 남아있을 수 있으므로, state를 확실히 바꿔 다음 틱에 스스로 멈추게 한다.
+    room.state = 'destroyed';
     broadcastLobby();
   };
   if (immediate) return destroy();
@@ -255,6 +258,7 @@ function startGame(room) {
   broadcastGame(room);
   broadcastLobby();
   scheduleBotTurn(room);
+  if (engine.startBots) engine.startBots(room, { broadcast: () => broadcastGame(room), finish: () => finishGame(room) });
 }
 
 function scheduleBotTurn(room) {
@@ -443,7 +447,6 @@ const handlers = {
   add_bot(ws, msg, client) {
     const room = mustBeHost(client);
     if (room.state !== 'waiting') throw new Error('대기 중에만 가능합니다.');
-    if (room.engine.meta.noBots) throw new Error('이 게임은 봇을 지원하지 않습니다.');
     if (room.players.length >= room.maxPlayers) throw new Error('자리가 없습니다.');
     const used = room.players.filter((p) => p.isBot).length;
     const bot = {

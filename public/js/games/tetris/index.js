@@ -117,7 +117,7 @@
     rebindListener: null,
 
     renderSetup(container) {
-      container.innerHTML = `<p class="muted small-text">테트리스는 2~4인 · 실시간 배틀로얄(가비지 공격, 최후 생존) · 봇은 지원하지 않습니다.</p>`;
+      container.innerHTML = `<p class="muted small-text">테트리스는 2~4인 · 실시간 배틀로얄(가비지 공격, 최후 생존) · 봇 추가 가능.</p>`;
     },
 
     mount({ canvas, hudSlot, ctx }) {
@@ -174,7 +174,11 @@
       for (const g of newGarbage) {
         if (UI.engine) UI.engine.queueGarbage(g.lines, g.holeCol);
       }
-      if (newGarbage.length && window.Sound) window.Sound.garbageWarning();
+      if (newGarbage.length) {
+        const totalLines = newGarbage.reduce((s, g) => s + g.lines, 0);
+        const fromName = newGarbage[newGarbage.length - 1].fromName || '상대';
+        UI.notifyAttackReceived(totalLines, fromName);
+      }
       UI.setOpponents((state.players || []).filter((p) => p.id !== state.you));
       UI.setMeta({ finished: state.finished, winnerName: state.winnerName });
       if (state.finished && !(prev && prev.finished) && window.Sound) {

@@ -20,7 +20,11 @@
   const NEXT_QUEUE_SIZE = 5;
   const BASE_GRAVITY_MS = 900;
   const MIN_GRAVITY_MS = 100;
-  const LINES_PER_LEVEL = 10; // 이 줄 수만큼 지울 때마다 중력이 조금씩 빨라짐(전투 위주 모드라 완만하게)
+  // 개인 성과(줄 수)와 무관하게, 매치 경과 시간에 따라 전원의 낙하 속도가 계속 빨라진다(현재 서바이벌 모드 특성).
+  const SPEEDUP_INTERVAL_MS = 20000; // 이 시간(20초)마다 한 단계씩 빨라짐
+  const SPEEDUP_STEP_MS = 60;
+  const COMBO_BONUS_CAP = 4; // 연속 클리어(콤보)당 가비지 보너스 상한
+  const B2B_BONUS = 1; // 테트리스(4줄)를 연속으로 성공시키면 추가 보너스(백투백)
 
   function emptyBoard() {
     const b = new Array(ROWS);
@@ -39,6 +43,12 @@
       if (board[cy][cx]) return false;
     }
     return true;
+  }
+
+  // 매치 시작 후 경과 시간(ms) 기준 낙하 속도. 개인 실력과 무관하게 시간이 지날수록 전원 빨라진다.
+  function gravityForElapsed(elapsedMs) {
+    const level = Math.floor(elapsedMs / SPEEDUP_INTERVAL_MS);
+    return { gravityMs: Math.max(MIN_GRAVITY_MS, BASE_GRAVITY_MS - level * SPEEDUP_STEP_MS), level };
   }
 
   function createEngine(seed) {
@@ -61,6 +71,8 @@
       incomingGarbage: [], // [{ lines, holeCol }]
       dropAccum: 0,
       gravityMs: BASE_GRAVITY_MS,
+      elapsedMs: 0,   // 매치 진행 시간 누적(경과에 따라 gravityMs가 계속 빨라짐)
+      speedLevel: 0,
       grounded: false,
       lockTimer: LOCK_DELAY_MS,
       lockResets: 0,
@@ -68,6 +80,8 @@
       linesClearedTotal: 0,
       garbageSentTotal: 0,
       garbageReceivedTotal: 0,
+      comboCount: -1, // -1=콤보 없음. 클리어할 때마다 +1(0부터 보너스 대상)
+      b2bActive: false, // 직전 클리어가 테트리스(4줄)였는지 — 연속되면 백투백 보너스
     };
 
     // canHold은 여기서 건드리지 않는다 — hold()가 스왑 후 다시 spawnPiece를 호출하므로,
@@ -129,7 +143,22 @@
       st.cur = null;
       const cleared = clearLines();
       st.linesClearedTotal += cleared;
-      const garbageSent = garbageForClear(cleared);
+
+      // 콤보(연속 클리어)·백투백(연속 테트리스) 보너스 — 공격을 더 드라마틱하게 만든다.
+      let comboBonus = 0, b2bBonus = 0;
+      if (cleared > 0) {
+        st.comboCount += 1; // -1(없음) -> 0(첫 클리어, 보너스 없음) -> 1(두 번째 연속, 보너스 시작)
+        comboBonus = st.comboCount > 0 ? Math.min(st.comboCount, COMBO_BONUS_CAP) : 0;
+        if (cleared === 4) {
+          if (st.b2bActive) b2bBonus = B2B_BONUS;
+          st.b2bActive = true;
+        } else {
+          st.b2bActive = false; // 4줄 미만 클리어는 백투백 스트릭을 끊는다
+        }
+      } else {
+        st.comboCount = -1; // 못 지운 락은 콤보만 끊고, 백투백은 그대로 유지(가이드라인과 동일)
+      }
+      const garbageSent = garbageForClear(cleared) + comboBonus + b2bBonus;
       st.garbageSentTotal += garbageSent;
 
       applyIncomingGarbage();
@@ -137,11 +166,11 @@
         spawnPiece(pullNext());
         st.canHold = true; // 고정을 마쳤으니 다음 조각에서 다시 홀드 가능
         updateGrounded();
-        // 레벨업(가벼운 가속) — 전투 모드라 완만하게만 적용
-        const level = Math.floor(st.linesClearedTotal / LINES_PER_LEVEL);
-        st.gravityMs = Math.max(MIN_GRAVITY_MS, BASE_GRAVITY_MS - level * 60);
       }
-      return { locked: true, linesCleared: cleared, garbageSent, topOut: st.topOut };
+      return {
+        locked: true, linesCleared: cleared, garbageSent, topOut: st.topOut,
+        combo: st.comboCount, b2b: b2bBonus > 0,
+      };
     }
 
     function moveBy(dx, dy) {
@@ -211,7 +240,12 @@
       },
 
       // dtMs 경과에 따른 중력/락딜레이 진행. 조각이 고정되면 이벤트를 반환.
+      // 매치 경과 시간을 누적해 개인 성과와 무관하게 전원 낙하 속도가 계속 빨라지게 한다.
       tick(dtMs) {
+        st.elapsedMs += dtMs;
+        const g = gravityForElapsed(st.elapsedMs);
+        st.gravityMs = g.gravityMs;
+        st.speedLevel = g.level;
         if (!st.cur || st.topOut) return { locked: false };
         if (!st.grounded) {
           st.dropAccum += dtMs;
@@ -237,5 +271,5 @@
     };
   }
 
-  return { createEngine, canPlace, cellsFor, emptyBoard, COLS, ROWS };
+  return { createEngine, canPlace, cellsFor, emptyBoard, gravityForElapsed, COLS, ROWS };
 });

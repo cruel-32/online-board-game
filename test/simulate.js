@@ -422,6 +422,74 @@ for (const pc of [3, 4, 5]) {
     console.log('✅ 테트리스 홀드(고정 전 재홀드 금지)');
   }
 
+  // 시간 기반 가속: 개인 성과와 무관하게 매치 경과 시간에 따라 낙하 속도가 빨라지고, 최저치 이하로는 안 내려감
+  {
+    const { gravityForElapsed } = require('../public/js/games/tetris/engine.js');
+    const g0 = gravityForElapsed(0);
+    const g1 = gravityForElapsed(20000);
+    const gMax = gravityForElapsed(10_000_000);
+    assert.equal(g0.gravityMs, 900, '시작 시 기본 중력');
+    assert(g1.gravityMs < g0.gravityMs, '20초 경과 후 더 빨라짐');
+    assert.equal(gMax.gravityMs, 100, '충분히 시간이 지나면 최저치(100ms)에서 멈춤');
+    console.log('✅ 테트리스 시간 기반 가속(성과 무관, 최저치 클램프)');
+  }
+
+  // 콤보/백투백 가비지 보너스: 연속 클리어일수록, 연속 테트리스일수록 더 큰 공격이 나가야 한다
+  {
+    const e = createEngine(3);
+    const s = e.getState();
+    const fillRow = (row) => { for (let c = 1; c < COLS; c++) s.board[row][c] = 'X'; };
+
+    fillRow(19);
+    s.cur = { type: 'I', rot: 1, x: -2, y: 0 };
+    const r1 = e.hardDrop();
+    assert.equal(r1.garbageSent, 0, '첫 클리어는 콤보 보너스 없음(더블 미만이라 기본값도 0)');
+    assert.equal(r1.combo, 0);
+
+    fillRow(19);
+    s.cur = { type: 'I', rot: 1, x: -2, y: 0 };
+    const r2 = e.hardDrop();
+    assert.equal(r2.garbageSent, 1, '두 번째 연속 클리어부터 콤보 보너스 +1');
+    assert.equal(r2.combo, 1);
+
+    // 클리어 없는 락으로 콤보를 끊는다
+    s.cur = { type: 'O', rot: 0, x: 8, y: 0 };
+    const r3 = e.hardDrop();
+    assert.equal(r3.combo, -1, '클리어 실패 시 콤보 초기화');
+
+    // 백투백: 테트리스(4줄)를 연속으로 성공시키면 보너스 추가
+    const fillTetris = () => { for (let r = ROWS - 4; r < ROWS; r++) fillRow(r); };
+    fillTetris();
+    s.cur = { type: 'I', rot: 1, x: -2, y: 0 };
+    const t1 = e.hardDrop();
+    assert.equal(t1.garbageSent, 4, '첫 테트리스는 백투백 보너스 없음');
+    assert.equal(t1.b2b, false);
+
+    fillTetris();
+    s.cur = { type: 'I', rot: 1, x: -2, y: 0 };
+    const t2 = e.hardDrop();
+    assert.equal(t2.garbageSent, 6, '연속 테트리스: 기본 4 + 콤보 +1 + 백투백 +1 = 6');
+    assert.equal(t2.b2b, true);
+    console.log('✅ 테트리스 콤보/백투백 가비지 보너스');
+  }
+
+  // 봇 AI: 휴리스틱 배치 탐색이 실제로 오래 버티며 줄을 지우는지 검증(placeholder가 아님을 보장)
+  {
+    const { playOneMove } = require('../server/src/games/tetris/bot');
+    const e = createEngine(42);
+    const s = e.getState();
+    let locks = 0, linesCleared = 0;
+    for (let i = 0; i < 300; i++) {
+      const ev = playOneMove(e);
+      if (ev.locked) { locks++; linesCleared += ev.linesCleared; }
+      if (s.topOut) break;
+    }
+    assert.equal(s.topOut, false, '휴리스틱 봇은 300수 동안 탑아웃하지 않아야 함');
+    assert.equal(locks, 300, '300수 모두 정상적으로 고정되어야 함');
+    assert(linesCleared > 20, `봇이 충분히 줄을 지워야 함(실제: ${linesCleared})`);
+    console.log('✅ 테트리스 봇 AI(300수 생존 + 줄 클리어)');
+  }
+
   // 퍼징: 무작위 입력을 오래 반복해도 예외 없이 동작(충돌/경계 처리 검증)
   {
     for (let trial = 0; trial < 10; trial++) {

@@ -4,15 +4,60 @@
  * rooms.js(게임 독립 오케스트레이터)가 이 인터페이스를 통해 게임을 구동한다.
  *
  * 다른 게임들과 달리 "차례" 개념이 없다: currentActor는 항상 null을 반환해
- * rooms.js의 봇 자동 진행 스케줄러(scheduleBotTurn)가 자연히 아무 일도 하지 않게 한다.
+ * rooms.js의 턴제 봇 자동 진행 스케줄러(scheduleBotTurn)가 자연히 아무 일도 하지 않게 한다.
  * 실제 진행(중력·충돌·회전)은 각 클라이언트가 로컬에서 시뮬레이션하고, 조각이 고정될 때마다
  * game_action으로 결과만 보고한다 — 그래서 이 엔진은 서버 쪽 tick(주기적 갱신)이 필요 없다.
  *
- * v1은 봇을 지원하지 않는다(meta.noBots) — 실시간 판단이 필요한 테트리스 봇은
- * 카드게임 봇과 난이도가 다르므로 1차 스코프에서 제외했다. 연결이 끊긴 플레이어는
- * (봇으로 전환하는 다른 게임들과 달리) handleDisconnect로 즉시 탈락 처리한다.
+ * 테트리스 봇은 턴제 게임 봇과 완전히 별도 경로로 동작한다: startGame() 직후 rooms.js가
+ * 호출하는 startBots()가 봇마다 클라이언트와 동일한 public/js/games/tetris/engine.js
+ * 인스턴스를 서버에서 직접 돌리고(엔진 재구현 없음), bot.js의 휴리스틱으로 스스로 플레이하며,
+ * 사람 클라이언트와 동일하게 game.applyLock()으로 결과를 보고한다.
+ * 연결이 끊긴(봇이 아닌) 플레이어는 봇으로 전환하는 다른 게임들과 달리 handleDisconnect로
+ * 즉시 탈락 처리한다(실시간 대전 중간에 봇이 대신 이어받기엔 상태 이관이 마땅치 않음).
  */
 const { Game } = require('./game');
+const Engine = require('../../../../public/js/games/tetris/engine.js');
+const Bot = require('./bot');
+
+const BOT_START_DELAY_MS = 3400; // 클라이언트의 3·2·1·GO 카운트다운과 맞춰 봇도 그만큼 대기 후 시작
+const BOT_MOVE_INTERVAL_MS = 700; // 봇 한 수(조각 하나)당 걸리는 "생각+낙하" 시간
+
+function flattenBoard(board2d) {
+  const flat = [];
+  for (const row of board2d) for (const cell of row) flat.push(cell);
+  return flat;
+}
+
+// 봇 하나를 계속 진행시키는 재귀 타이머. room.game이 바뀌거나 게임이 끝나면 스스로 멈춘다.
+// delayMs를 인자로 받아, 첫 수만 카운트다운만큼 더 기다리고 이후엔 일반 간격으로 반복한다.
+function scheduleBotMove(game, room, botId, engine, hooks, delayMs) {
+  setTimeout(() => {
+    if (room.game !== game || room.state !== 'playing' || game.finished || !game.alive.has(botId)) return;
+
+    // 서버가 아직 이 봇에게 전달하지 않은 가비지 공격을 로컬 엔진에 반영
+    // (사람 클라이언트의 setState가 매 프레임 하는 일과 동일).
+    const pending = game.pendingGarbage.get(botId) || [];
+    for (const g of pending) engine.queueGarbage(g.lines, g.holeCol);
+    pending.length = 0;
+
+    const st = engine.getState();
+    const ev = Bot.playOneMove(engine);
+    if (ev.locked) {
+      game.applyLock(botId, {
+        linesCleared: ev.linesCleared,
+        garbageSent: ev.garbageSent,
+        topOut: ev.topOut,
+        board: flattenBoard(st.board),
+        holdType: st.hold,
+        nextTypes: st.queue.slice(0, 5),
+      });
+    }
+
+    if (game.finished) { hooks.finish(); return; }
+    hooks.broadcast();
+    scheduleBotMove(game, room, botId, engine, hooks, BOT_MOVE_INTERVAL_MS);
+  }, delayMs);
+}
 
 module.exports = {
   meta: {
@@ -21,7 +66,6 @@ module.exports = {
     minPlayers: 2,
     maxPlayers: 4,
     settleDelay: 2500,
-    noBots: true, // 대기실에서 "봇 추가"를 막는다(rooms.js가 이 플래그를 확인)
   },
 
   defaultOptions() { return {}; },
@@ -31,6 +75,19 @@ module.exports = {
 
   createGame(room) {
     return new Game(room.players);
+  },
+
+  // rooms.js가 startGame() 직후 한 번 호출한다. 방에 있는 봇마다 서버 전용 엔진 인스턴스를
+  // 만들어 game.botEngines에 등록하고, 각자 독립된 타이머로 스스로 플레이를 시작시킨다.
+  startBots(room, hooks) {
+    const game = room.game;
+    for (const p of room.players) {
+      if (!p.isBot || game.botEngines.has(p.id)) continue;
+      const engine = Engine.createEngine(game.seed);
+      game.botEngines.set(p.id, engine);
+      // 첫 수는 사람 클라이언트의 3·2·1·GO 카운트다운이 끝난 뒤에 두도록 그만큼 더 지연.
+      scheduleBotMove(game, room, p.id, engine, hooks, BOT_START_DELAY_MS);
+    }
   },
 
   // 차례 개념이 없는 실시간 게임 — 항상 null(= 봇 자동 진행 스케줄러가 개입하지 않음)

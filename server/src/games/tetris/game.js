@@ -23,6 +23,7 @@ class Game {
     }]));
     // 각 플레이어에게 아직 전달하지 않은 가비지 공격. serialize()가 브로드캐스트에 실어보낸 뒤 비운다.
     this.pendingGarbage = new Map(this.playerIds.map((id) => [id, []]));
+    this.botEngines = new Map(); // botId -> TetrisEngine 인스턴스(서버가 대신 시뮬레이션, index.js의 startBots가 채움)
     this.eliminationOrder = []; // 탈락한 순서대로 쌓임(먼저 탈락 = 낮은 순위)
     this.finished = false;
     this.winnerId = null;

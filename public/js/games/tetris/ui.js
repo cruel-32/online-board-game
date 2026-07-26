@@ -22,6 +22,8 @@
     finished: false, winnerName: '',
     paused: false, // 아직 매치 시작 카운트다운 중이면 로컬 엔진을 진행시키지 않는다
     countdownStart: null, _lastCountdownLabel: null,
+    attackBanner: null, // { text, kind:'sent'|'received', start, until } — 공격을 드라마틱하게 알리는 큰 배너
+    shakeUntil: 0,       // 공격을 받았을 때 화면을 짧게 흔드는 연출
 
     init(canvas, callbacks) {
       this.canvas = canvas;
@@ -108,7 +110,27 @@
 
     _reportLock(ev) {
       if (ev.topOut) this.myTopOut = true;
+      if (ev.garbageSent > 0) {
+        const label = ev.b2b ? `백투백 테트리스! -${ev.garbageSent}`
+          : ev.combo > 0 ? `COMBO x${ev.combo + 1}! -${ev.garbageSent}`
+          : `공격! -${ev.garbageSent}`;
+        this.showAttackBanner(`⚔ ${label}`, 'sent');
+        if (window.Sound) window.Sound.attackSent(ev.garbageSent);
+      }
       if (this.callbacks.onLock) this.callbacks.onLock(ev);
+    },
+
+    // index.js가 상대에게 가비지 공격을 받았을 때 호출 — 화면 흔들림 + 큰 경고 배너로 위협감을 준다.
+    notifyAttackReceived(lines, fromName) {
+      this.showAttackBanner(`⚠ ${fromName}님의 공격! -${lines}`, 'received');
+      this.shakeUntil = performance.now() + 420;
+      if (window.Sound) window.Sound.attackReceived(lines);
+    },
+
+    showAttackBanner(text, kind) {
+      const now = performance.now();
+      const dur = kind === 'received' ? 1500 : 1200;
+      this.attackBanner = { text, kind, start: now, until: now + dur };
     },
 
     /* ---------- 입력 결과 사운드 훅(선택) ---------- */
@@ -146,7 +168,15 @@
     render() {
       const ctx = this.ctx;
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      ctx.clearRect(0, 0, this.W, this.H);
+      // 공격을 받았을 때 화면 전체를 짧게 흔들어 위협감을 준다(시간이 지날수록 감쇠).
+      let shakeX = 0, shakeY = 0;
+      if (this.anim < this.shakeUntil) {
+        const power = Math.min(1, (this.shakeUntil - this.anim) / 420) * 7;
+        shakeX = (Math.random() - 0.5) * power;
+        shakeY = (Math.random() - 0.5) * power;
+        ctx.translate(shakeX, shakeY);
+      }
+      ctx.clearRect(-20, -20, this.W + 40, this.H + 40);
       this.drawBackground(ctx);
       const L = this.layout();
       this.drawMyBoard(ctx, L);
@@ -156,6 +186,35 @@
       this.drawOpponents(ctx, L);
       if (this.finished) this.drawFinishedOverlay(ctx);
       if (this.countdownStart != null) this.drawCountdown(ctx);
+      this.drawAttackBanner(ctx);
+    },
+
+    // 공격을 보내거나 받았을 때 화면 중앙 상단에 잠깐 띄우는 큰 배너(펀치감 있는 확대/축소).
+    drawAttackBanner(ctx) {
+      const b = this.attackBanner;
+      if (!b) return;
+      if (this.anim >= b.until) { this.attackBanner = null; return; }
+      const total = b.until - b.start;
+      const t = Math.min(1, (this.anim - b.start) / total);
+      const fadeIn = Math.min(1, t / 0.12);
+      const fadeOut = t > 0.65 ? Math.max(0, (1 - t) / 0.35) : 1;
+      const alpha = Math.min(fadeIn, fadeOut);
+      const scale = 1 + 0.18 * Math.sin(Math.min(t, 1) * Math.PI);
+      const color = b.kind === 'received' ? '#ff5a5a' : '#ffd76e';
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(this.W / 2, this.H * 0.24);
+      ctx.scale(scale, scale);
+      ctx.textAlign = 'center';
+      ctx.font = '900 26px sans-serif';
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = 'rgba(15, 8, 8, 0.9)';
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 26;
+      ctx.strokeText(b.text, 0, 0);
+      ctx.fillStyle = color;
+      ctx.fillText(b.text, 0, 0);
+      ctx.restore();
     },
 
     drawCountdown(ctx) {
@@ -308,15 +367,25 @@
       if (!this.engine) return;
       const pending = this.engine.getState().incomingGarbage.reduce((s, g) => s + g.lines, 0);
       if (pending <= 0) return;
+      const big = pending >= 4; // 큰 공격일수록 더 눈에 띄게(굵기+펄스+발광)
       const b = L.my;
-      const barW = 10;
+      const barW = big ? 15 : 10;
       const x = b.x - barW - 6;
       const h = Math.min(b.h, pending * (b.h / ROWS));
-      ctx.fillStyle = 'rgba(255,90,90,0.85)';
+      const pulse = big ? 0.75 + 0.25 * Math.sin(this.anim / 110) : 1;
+      ctx.save();
+      if (big) {
+        ctx.shadowColor = '#ff5a5a';
+        ctx.shadowBlur = 16 * pulse;
+      }
+      ctx.fillStyle = big ? `rgba(255,60,60,${0.75 + 0.25 * pulse})` : 'rgba(255,90,90,0.85)';
       ctx.fillRect(x, b.y + b.h - h, barW, h);
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+      ctx.strokeStyle = big ? 'rgba(255,200,200,0.7)' : 'rgba(255,255,255,0.3)';
       ctx.strokeRect(x, b.y, barW, b.h);
-      ctx.textAlign = 'center'; ctx.font = '800 11px sans-serif'; ctx.fillStyle = '#ffb0b0';
+      ctx.restore();
+      ctx.textAlign = 'center';
+      ctx.font = big ? '900 15px sans-serif' : '800 11px sans-serif';
+      ctx.fillStyle = big ? '#ff8080' : '#ffb0b0';
       ctx.fillText(String(pending), x + barW / 2, b.y - 6);
     },
 
