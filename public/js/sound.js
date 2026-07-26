@@ -222,6 +222,11 @@
       tone(500, { type: 'sine', dur: 0.11, gain: 0.13 });
       tone(360, { type: 'sine', dur: 0.16, gain: 0.12, delay: 0.09 });
     },
+    // 칩을 놓거나 가져올 때: 짧고 가벼운 동전 딸깍 소리(노땡스)
+    chip() {
+      tone(1200, { type: 'sine', dur: 0.045, gain: 0.12, endFreq: 900 });
+      tone(1600, { type: 'sine', dur: 0.035, gain: 0.08, delay: 0.02, endFreq: 1300 });
+    },
   };
 
   window.Sound = Sound;

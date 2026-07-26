@@ -291,4 +291,47 @@ for (const pc of [3, 4, 5]) {
   }
 }
 
+/* ---------- 14: 노땡스: 봇 자동 대전 + 카드/칩 무결성 ---------- */
+{
+  const { Game, startingChips } = require('../server/src/games/notthanks/game');
+  const { chooseBotMove } = require('../server/src/games/notthanks/bot');
+  for (const pc of [3, 4, 5]) {
+    for (let trial = 0; trial < 30; trial++) {
+      const players = Array.from({ length: pc }, (_, i) => ({ id: 'p' + i }));
+      const g = new Game(players);
+      assert.equal(g.deck.length + 1, 24, '덱 24장(초기 오픈 카드 1장 포함)');
+      assert.equal(g.chips.get(players[0].id), startingChips(pc), '시작 칩 개수');
+      let steps = 0;
+      while (!g.finished) {
+        const pid = g.currentPlayerId();
+        const mv = chooseBotMove(g, pid);
+        if (mv.action === 'take') g.take(pid);
+        else g.pass(pid);
+        assert(++steps < 5000, '게임이 끝나지 않음(무한 루프)');
+      }
+      const res = g.results();
+      const totalCards = res.reduce((s, r) => s + r.cards.length, 0);
+      assert.equal(totalCards, 24, '카드 24장 모두 분배됨');
+      // 칩 총량 보존: 시작 총 칩 = 지금 각자 보유 칩 + 카드 위에 얹힌 칩(종료 시 0)
+      const totalChipsNow = res.reduce((s, r) => s + r.chips, 0);
+      assert.equal(totalChipsNow, startingChips(pc) * pc, '칩 총량 보존');
+      // 중복 카드 없음
+      const seen = new Set();
+      for (const r of res) for (const c of r.cards) { assert(!seen.has(c), '카드 중복 없음'); seen.add(c); }
+    }
+    console.log(`✅ 노땡스 ${pc}인 봇 자동 대전 30판 완주`);
+  }
+  // 연속 숫자 최저값만 계산되는지 점수 공식 검증
+  {
+    const players = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    const g = new Game(players);
+    g.cardsOwned.set('a', [5, 6, 7, 20]); // 5-6-7 연속 → 5만 계산, +20 = 25
+    g.chips.set('a', 3);
+    const r = g.results().find((x) => x.id === 'a');
+    assert.equal(r.cardSum, 25, '연속 구간은 최저값만 합산');
+    assert.equal(r.score, 22, '카드합 - 보유 칩');
+  }
+  console.log('✅ 노땡스 점수 계산(연속 구간 최저값 합산)');
+}
+
 console.log('\n🎉 모든 테스트 통과');
