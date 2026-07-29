@@ -318,6 +318,71 @@ input, select {
 .result-busted { margin-top: 10px; color: #ff8f8f; font-size: 13px; text-align: center; }
 .result-champion { margin-top: 8px; text-align: center; font-size: 15px; color: #ffd76e; }
 
+/* ================= 티츄 ================= */
+/* 카드 무늬 색(옥/검/탑) — .mini-tile.star 는 렉시오와 동일한 노란색을 그대로 재사용 */
+.mini-tile.jade { color: #52d273; }
+.mini-tile.sword { color: #9fb3c8; }
+.mini-tile.pagoda { color: #ff6b57; }
+
+/* 대기실: 목표 점수 옆 팀 배정(A/B 2칸 + 미배정) */
+.tichu-teams { display: flex; gap: 10px; margin-top: 10px; }
+.tichu-team-col { flex: 1; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 8px; }
+.tichu-team-title { font-size: 11px; color: #9a93a8; margin-bottom: 6px; }
+.tichu-team-member { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; padding: 3px 0; }
+.tichu-unassigned { margin-top: 10px; background: rgba(255,255,255,0.03); border-radius: 10px; padding: 8px; }
+.tichu-unassigned-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 13px; padding: 4px 0; }
+
+/* 그랜드티츄/카드나눔 팝업에 늘어놓는 카드 칩 목록 */
+.tichu-card-row { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; max-height: 180px; overflow-y: auto; }
+.tichu-card-btn { padding: 0; border: none; background: none; cursor: pointer; }
+.tichu-card-btn .mini-tile { transition: opacity 0.1s, transform 0.1s; }
+.tichu-card-btn:active .mini-tile { transform: scale(0.94); }
+.tichu-card-btn.picked .mini-tile { opacity: 0.3; }
+
+/* 카드 나눔: 왼쪽/파트너/오른쪽 대상 선택 */
+.tichu-exchange-targets { display: flex; gap: 8px; margin: 8px 0; }
+.tichu-target {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 8px 4px; border-radius: 10px; cursor: pointer;
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #ece7dc;
+}
+.tichu-target.active { border-color: #ffd76e; background: rgba(255,215,110,0.12); }
+.tichu-target-label { font-size: 11px; color: #9a93a8; }
+.tichu-slot { font-size: 12px; font-weight: 700; min-height: 34px; display: flex; align-items: center; justify-content: center; }
+
+/* 마작 소원 팝업: 랭크 버튼 그리드 */
+.tichu-wish-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 8px 0; }
+
+/* 결과 팝업: 이번 핸드에 각 팀이 얻은 점수(가장 먼저·크게 보여주는 영역) */
+.tichu-hand-delta { display: flex; gap: 10px; margin: 4px 0 10px; }
+.tichu-delta-col {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 6px; border-radius: 10px; background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.12);
+}
+.tichu-delta-col.teamA { border-color: rgba(111, 211, 255, 0.4); }
+.tichu-delta-col.teamB { border-color: rgba(255, 159, 176, 0.4); }
+.tichu-delta-label { font-size: 11px; color: #9a93a8; }
+.tichu-delta-value { font-size: 22px; font-weight: 800; }
+.tichu-delta-value.delta-plus { color: #7fe08d; }
+.tichu-delta-value.delta-minus { color: #ff8f8f; }
+
+/* 결과 팝업: 티츄/그랜드티츄 선언 성공·실패 가감점 목록 */
+.tichu-bonus-list { margin-bottom: 8px; }
+.tichu-bonus-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px; padding: 3px 2px; color: #d8d2e4;
+}
+
+/* 결과 팝업: 팀 누적 점수 + 목표 대비 진행 막대 */
+.tichu-team-scores { margin-top: 10px; }
+.tichu-score-row { display: flex; align-items: baseline; gap: 6px; font-size: 13px; margin-top: 6px; }
+.tichu-score-row b { color: #ffd76e; font-size: 16px; }
+.tichu-score-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.1); margin-top: 4px; overflow: hidden; }
+.tichu-score-fill { height: 100%; border-radius: 3px; }
+.tichu-score-fill.teamA { background: #6fd3ff; }
+.tichu-score-fill.teamB { background: #ff9fb0; }
+
 /* ================= 음성채팅 / 채팅 위젯 (대기실·게임 화면 공통, 항상 최상단) ================= */
 .side-widgets {
   position: fixed;

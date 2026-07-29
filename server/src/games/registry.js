@@ -10,8 +10,9 @@ const seven = require('./seven');
 const notthanks = require('./notthanks');
 const tetris = require('./tetris');
 const tetrisServer = require('./tetris-server');
+const tichu = require('./tichu');
 
-const engines = { lexio, felicity, uno, holdem, seven, notthanks, tetris, 'tetris-server': tetrisServer };
+const engines = { lexio, felicity, uno, holdem, seven, notthanks, tetris, 'tetris-server': tetrisServer, tichu };
 
 // 사용자에게는 노출하지 않지만(로비/방장 게임선택 드롭다운에서 제외) 엔진 자체는 그대로 두는 게임들.
 // tetris(클라이언트 권위 버전)는 tetris-server(서버 권위, 사용자에게는 "테트리스"로 노출)와 비교하기 위해

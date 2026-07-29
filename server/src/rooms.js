@@ -88,6 +88,7 @@ function serializeRoom(room, viewerId) {
         id: p.id, name: p.name, isBot: p.isBot,
         ready: p.ready, connected: p.connected,
         seat: engine.seatLabel(room, p),
+        team: p.team ?? null,
         inVoice: !!p.inVoice, micMuted: !!p.micMuted,
       })),
       lastResult: room.lastResult || null,
@@ -243,6 +244,11 @@ function startGame(room) {
     (p) => !p.isBot && p.connected && p.id !== room.hostId && !p.ready
   );
   if (humansNotReady.length) throw new Error('아직 준비하지 않은 플레이어가 있습니다.');
+  // 게임별 추가 시작 조건(예: 티츄의 2:2 팀 구성). 미구현 게임은 영향 없음.
+  if (engine.canStart) {
+    const err = engine.canStart(room);
+    if (err) throw new Error(err);
+  }
 
   if (room.matchOver) {
     engine.resetMatch(room);
@@ -263,6 +269,28 @@ function startGame(room) {
   if (engine.startRealtime) engine.startRealtime(room, rtHooks);
 }
 
+// 자기 차례가 아닌 봇이 봄(폭탄) 등으로 끼어들 기회가 있으면 연쇄적으로 처리한다
+// (engine.checkBombInterrupt 훅이 있는 게임만 해당 — 그 외 게임은 즉시 false 반환).
+// 사람 플레이어의 끼어들기는 본인이 직접 game_action을 보내므로 여기서 다루지 않는다.
+// 반환값 true면 그 연쇄 도중 게임이 끝났다는 뜻(호출부가 finishGame으로 이어가야 함).
+function resolveBombInterrupts(room) {
+  const engine = room.engine;
+  if (!engine.checkBombInterrupt) return false;
+  for (let i = 0; i < 8; i++) { // 무한 루프 방지용 안전장치
+    if (!room.game || room.state !== 'playing') return false;
+    const interrupt = engine.checkBombInterrupt(room.game, room);
+    if (!interrupt) return false;
+    try {
+      const r = engine.applyAction(room.game, room, interrupt.pid, interrupt.action);
+      if (r && r.ended) return true;
+    } catch (e) {
+      console.error('[bomb-interrupt] failed:', e.message);
+      return false;
+    }
+  }
+  return false;
+}
+
 function scheduleBotTurn(room) {
   clearTimeout(room.botTimer);
   const g = room.game, engine = room.engine;
@@ -280,6 +308,7 @@ function scheduleBotTurn(room) {
       const action = engine.botAction(g, pid);
       const r = engine.applyAction(g, room, pid, action);
       if (r && r.ended) return finishGame(room);
+      if (resolveBombInterrupts(room)) return finishGame(room);
       broadcastGame(room);
       scheduleBotTurn(room);
     } catch (e) {
@@ -412,6 +441,7 @@ const handlers = {
     room.engine = engine;
     room.options = engine.normalizeOptions(engine.defaultOptions());
     room.maxPlayers = Math.min(Math.max(room.maxPlayers, engine.meta.minPlayers), engine.meta.maxPlayers);
+    for (const p of room.players) p.team = null; // 게임이 바뀌면 팀 배정도 초기화(팀 없는 게임엔 무해)
     for (const p of room.players) engine.initPlayer(room, p);
     // 게임이 바뀌면 진행 상태/결과 초기화
     room.lastResult = null;
@@ -420,6 +450,19 @@ const handlers = {
     for (const p of room.players) if (!p.isBot) p.ready = false;
     broadcastRoom(room);
     broadcastLobby();
+  },
+
+  // 팀 배정(2:2 팀 게임용). 자기 팀은 스스로, 다른 사람(봇 포함)의 팀은 방장만 지정 가능.
+  set_team(ws, msg, client) {
+    const room = mustBeInRoom(client);
+    if (room.state !== 'waiting') throw new Error('대기 중에만 팀을 변경할 수 있습니다.');
+    const targetId = String(msg.playerId || client.clientId);
+    if (targetId !== client.clientId && room.hostId !== client.clientId)
+      throw new Error('다른 플레이어의 팀은 방장만 변경할 수 있습니다.');
+    const target = room.players.find((p) => p.id === targetId);
+    if (!target) throw new Error('대상이 없습니다.');
+    target.team = msg.team === 'A' || msg.team === 'B' ? msg.team : null;
+    broadcastRoom(room);
   },
 
   set_max(ws, msg, client) {
@@ -510,6 +553,7 @@ const handlers = {
     if (room.state !== 'playing' || !room.game) throw new Error('게임 중이 아닙니다.');
     const r = room.engine.applyAction(room.game, room, client.clientId, msg.action || {});
     if (r && r.ended) return finishGame(room);
+    if (resolveBombInterrupts(room)) return finishGame(room);
     // 실시간 게임(startRealtime 보유, 예: 테트리스)은 자체 tick 루프가 상태 변화를 감지해
     // 최대 한 틱(수십ms) 이내에 알아서 브로드캐스트한다. 여기서 매 액션마다 즉시 또 브로드캐스트하면
     // 같은 상태를 두 번 내보내게 되어(DAS/ARR 연타 시 실측 초당 메시지가 거의 2배로 뛰었다) 생략한다.
