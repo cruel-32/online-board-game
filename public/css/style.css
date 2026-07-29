@@ -181,6 +181,11 @@ input, select {
 }
 .hud-btn-main.pass { background: linear-gradient(180deg, #5a3550, #3a2238); }
 
+/* 정렬/선택해제: 내 정보칸(닉네임/점수) 바로 위에 작게(.btn.tiny) 띄운다. left/top은 ui.js의
+   myInfoAnchor()가 매 상태 갱신·리사이즈마다 계산해 인라인으로 지정하며, 이 컨테이너의
+   좌하단이 그 앵커에 붙도록 위로 밀어 올린다. */
+.hud-my-actions { position: absolute; display: flex; gap: 6px; transform: translateY(-100%); }
+
 /* 테트리스: 키보드 방향키 물리 배치처럼 위 3칸(가운데=하드드롭, W와 동일) · 아래 3칸(좌/소프트드롭/우) */
 .tet-dpad {
   position: relative;

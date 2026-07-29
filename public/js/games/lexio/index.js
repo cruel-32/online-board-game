@@ -18,11 +18,13 @@
     <div class="hud-right">
       <div class="hud-secondary">
         <button id="btn-assist" class="btn hud-btn">조합<br>보기</button>
-        <button id="btn-sort" class="btn hud-btn">정렬</button>
-        <button id="btn-deselect" class="btn hud-btn" disabled>선택<br>해제</button>
         <button id="btn-rules" class="btn hud-btn">게임룰</button>
       </div>
       <button id="btn-play" class="btn hud-btn-main gold" disabled>내기</button>
+    </div>
+    <div id="hud-my-actions" class="hud-my-actions">
+      <button id="btn-sort" class="btn tiny">정렬</button>
+      <button id="btn-deselect" class="btn tiny" disabled>선택해제</button>
     </div>`;
 
   const RULES_HTML = `
@@ -122,14 +124,19 @@
       this.injected = Array.from(holder.children);
       this.injected.forEach((el) => screen.appendChild(el));
 
+      const callbacks = {
+        onSelectionChange: () => this.updateHudButtons(),
+        onLayout: () => this.repositionMyActions(),
+      };
       if (!GameUI.canvas) {
-        GameUI.init(canvas, { onSelectionChange: () => this.updateHudButtons() });
+        GameUI.init(canvas, callbacks);
       } else {
-        GameUI.callbacks = { onSelectionChange: () => this.updateHudButtons() };
+        GameUI.callbacks = callbacks;
         GameUI.resize && GameUI.resize();
       }
 
       this._wire();
+      this.repositionMyActions();
     },
 
     unmount() {
@@ -151,7 +158,18 @@
       GameUI.setState(state);          // 애니메이션이 새 상태의 좌석/테이블을 참조하도록 먼저 갱신
       this._playDiffSounds(prev, state);
       this.updateHudButtons();
+      this.repositionMyActions();
       this.maybeAutoPass();
+    },
+
+    // 정렬/선택해제 버튼을 내 정보칸(닉네임/점수) 바로 위에 붙인다.
+    repositionMyActions() {
+      const el = $('hud-my-actions');
+      if (!el) return;
+      const a = GameUI.myInfoAnchor();
+      if (!a) return;
+      el.style.left = `${a.x}px`;
+      el.style.top = `${a.y}px`;
     },
 
     bubbleAnchor(id) {

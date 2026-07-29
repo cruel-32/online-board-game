@@ -23,6 +23,7 @@
     selected: new Set(), // 선택된 타일 id
     playable: new Set(),
     manualOrder: false,
+    MY_ACTIONS_GAP: 34,  // 내 정보칸과 손패 사이, 정렬/선택해제 버튼(HTML)을 위해 비워두는 세로 공간(px)
     // 드래그 상태
     pointer: null, // {id, startX, startY, x, y, dragging, tileIdx}
     dragInsert: -1,
@@ -42,6 +43,7 @@
         canvas.width = Math.round(this.W * this.dpr);
         canvas.height = Math.round(this.H * this.dpr);
         if (window.Chat) window.Chat.reposition();
+        if (this.callbacks.onLayout) this.callbacks.onLayout();
       };
       this.resize = resize;
       window.addEventListener('resize', resize);
@@ -104,7 +106,11 @@
     sortHand() {
       if (!this.state) return;
       this.manualOrder = false;
-      this.handOrder = core.sortTiles(this.state.hand, this.state.maxN).map((t) => t.id);
+      const sortedIds = core.sortTiles(this.state.hand, this.state.maxN).map((t) => t.id);
+      // 고정 슬롯 개수(라운드 시작 시 배정된 손패 칸 수)는 그대로 유지하고, 남은 타일만 정렬된
+      // 순서로 앞쪽 슬롯에 채운다 — 그래야 정렬 후에도 타일 크기·줄 수가 다시 커지지 않는다.
+      const pad = this.handOrder.length - sortedIds.length;
+      this.handOrder = pad > 0 ? sortedIds.concat(new Array(pad).fill(null)) : sortedIds;
     },
 
     tileById(id) {
@@ -168,6 +174,17 @@
       if (!seat) return null;
       const rect = this.canvas.getBoundingClientRect();
       return { x: rect.left + seat.x, y: rect.top + seat.y - 40 };
+    },
+
+    // 내 정보칸(닉네임/점수) 바로 아래·손패 바로 위, 그 사이(MY_ACTIONS_GAP)의 페이지 좌표를 반환.
+    // HUD의 정렬/선택해제 버튼 컨테이너를 이 지점에 하단 정렬(translateY(-100%))로 앵커링한다.
+    myInfoAnchor() {
+      if (!this.state || !this.canvas) return null;
+      const L = this.handLayout();
+      const x = Math.max(10, L.x0);
+      const handTopY = L.twoRows ? L.y1 : L.y0;
+      const rect = this.canvas.getBoundingClientRect();
+      return { x: rect.left + x, y: rect.top + handTopY - 10 };
     },
 
     /* ---------- 레이아웃 ----------
@@ -651,9 +668,10 @@
       const L = this.handLayout();
       // 좌우 코너의 패스/내기 버튼과 겹치지 않도록, 가운데로 모인 손패의 왼쪽 끝 위에 정보를 얹는다.
       const x = Math.max(10, L.x0);
-      // 손패(맨 위 줄) 바로 위에 두 줄로 압축 배치 (겹침 방지): 아래 줄=이름/칩/선, 위 줄=차례·패스 표시
+      // 손패(맨 위 줄) 바로 위에 두 줄로 압축 배치 (겹침 방지): 아래 줄=이름/칩/선, 위 줄=차례·패스 표시.
+      // 정렬/선택해제 버튼(HTML)이 이 정보칸과 손패 사이(MY_ACTIONS_GAP)에 들어가므로 그만큼 더 띄운다.
       const handTopY = L.twoRows ? L.y1 : L.y0;
-      const rowY = handTopY - 10;
+      const rowY = handTopY - this.MY_ACTIONS_GAP - 10;
       const topY = rowY - 16;
       const isTurn = this.isMyTurn();
 
@@ -708,9 +726,7 @@
       const dragging = this.pointer && this.pointer.dragging;
       const fromIdx = dragging ? this.pointer.tileIdx : -1;
       const toIdx = dragging ? this.dragInsert : -1;
-      const fromRow = dragging ? this.rowOfIndex(fromIdx, L) : -1;
       const toRow = dragging && toIdx >= 0 ? this.rowOfIndex(toIdx, L) : -1;
-      const sameRowDrag = dragging && toIdx >= 0 && fromRow === toRow;
 
       // 뒷줄(위쪽)을 먼저 그리고 앞줄(아래쪽)을 나중에 그려서, 앞줄 카드가 선택(active)되어
       // 위로 올라올 때 뒷줄 카드에 가려 잘리지 않고 항상 앞줄이 더 높은 z-index를 갖게 한다.
@@ -722,17 +738,12 @@
         if (this.rowOfIndex(i, L) === 0) drawOrder.push(i);
       }
 
+      // 타일은 항상 고정된 슬롯(행/열)에 그린다. 드롭 시 자리 바꾸기(swap)만 일어나므로
+      // 드래그 중에도 관계없는 타일들이 밀려 보이지 않게, 자리 이동 애니메이션은 넣지 않는다.
       for (const i of drawOrder) {
         if (dragging && i === fromIdx) continue; // 드래그 중인 타일은 마지막에
         const row = this.rowOfIndex(i, L);
-        let col = row === 0 ? i : i - L.c0;
-        // 드래그 삽입 위치 표시: 같은 줄 안에서만 자리 이동 애니메이션
-        if (sameRowDrag && row === fromRow) {
-          const from = row === 0 ? fromIdx : fromIdx - L.c0;
-          const to = row === 0 ? toIdx : toIdx - L.c0;
-          if (from < to && col > from && col <= to) col -= 1;
-          else if (from > to && col >= to && col < from) col += 1;
-        }
+        const col = row === 0 ? i : i - L.c0;
         const x = (row === 0 ? L.x0 : L.x1) + col * L.spacing;
         const y = row === 0 ? L.y0 : L.y1;
         const id = this.handOrder[i];
@@ -930,9 +941,11 @@
       if (!this.pointer || e.pointerId !== this.pointer.id) return;
       const { dragging, tileIdx } = this.pointer;
       if (dragging && this.dragInsert >= 0 && this.dragInsert !== tileIdx) {
+        // 슬롯을 서로 맞바꾼다(splice로 밀어넣지 않음) — 그래야 사이에 있는 다른 타일들의
+        // 고정 슬롯 위치가 흔들리지 않는다(빈 슬롯과 바꾸면 그 자리는 그냥 비워짐).
         const id = this.handOrder[tileIdx];
-        this.handOrder.splice(tileIdx, 1);
-        this.handOrder.splice(this.dragInsert, 0, id);
+        this.handOrder[tileIdx] = this.handOrder[this.dragInsert];
+        this.handOrder[this.dragInsert] = id;
         this.manualOrder = true;
       } else if (!dragging) {
         // 탭 → 선택 토글
