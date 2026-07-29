@@ -18,7 +18,8 @@
   const GameUI = {
     canvas: null, ctx: null, dpr: 1, W: 0, H: 0,
     state: null, myId: null,
-    handOrder: [],       // 타일 id 배열 (표시 순서)
+    handOrder: [],       // 타일 id 배열(표시 순서). 라운드 중에는 길이가 고정되며, 낸 타일의 자리는
+                         // null로 비워 둔 채 유지된다(크기·줄 수·남은 타일 위치가 흔들리지 않도록).
     selected: new Set(), // 선택된 타일 id
     playable: new Set(),
     manualOrder: false,
@@ -73,15 +74,20 @@
       this.myId = state.you;
 
       const ids = state.hand.map((t) => t.id);
-      if (prevRound !== state.roundNo || !this.handOrder.length) {
-        this.manualOrder = false;
-      }
-      if (this.manualOrder) {
-        // 수동 순서 유지, 사라진 타일 제거
-        this.handOrder = this.handOrder.filter((id) => ids.includes(id));
-        for (const id of ids) if (!this.handOrder.includes(id)) this.handOrder.push(id);
-      } else {
+      const roundChanged = prevRound !== state.roundNo;
+      if (roundChanged || !this.handOrder.some((id) => id != null)) {
+        // 라운드 시작: 정렬된 순서로 고정 슬롯을 새로 배정한다 (이후 슬롯 개수는 라운드 내내 유지됨)
         this.handOrder = core.sortTiles(state.hand, state.maxN).map((t) => t.id);
+        this.manualOrder = false;
+      } else {
+        // 라운드 진행 중: 기존 슬롯 위치를 그대로 유지하고, 사라진(낸) 타일의 자리만 비운다
+        this.handOrder = this.handOrder.map((id) => (id != null && ids.includes(id)) ? id : null);
+        for (const id of ids) {
+          if (this.handOrder.includes(id)) continue;
+          const emptyIdx = this.handOrder.indexOf(null);
+          if (emptyIdx !== -1) this.handOrder[emptyIdx] = id;
+          else this.handOrder.push(id);
+        }
       }
       // 선택 유지하되 없는 타일 제거
       this.selected = new Set([...this.selected].filter((id) => ids.includes(id)));
@@ -143,6 +149,13 @@
       this.notifyButtons();
     },
 
+    clearSelection() {
+      if (!this.selected.size) return;
+      this.selected.clear();
+      if (window.Sound) window.Sound.deselect();
+      this.notifyButtons();
+    },
+
     notifyButtons() {
       if (this.callbacks.onSelectionChange) this.callbacks.onSelectionChange();
     },
@@ -161,6 +174,8 @@
      * 세로 모드(H > W)에서만 손패가 7장을 넘어가면 두 줄로 나눠 가로 폭을 줄인다
      * (예: 13장 → 앞줄 7장 + 뒷줄 6장). 가로 모드에서는 항상 한 줄로 표시한다.
      * 그래도 가용 폭이 좁을 때는 타일 크기 자체도 줄여 화면 밖으로 잘리지 않게 한다.
+     * handOrder.length는 라운드 중 타일을 내도 줄어들지 않고(빈 슬롯은 null로 유지) 고정되므로,
+     * 이 레이아웃(타일 크기·줄 수·위치)도 라운드 내내 그대로 유지된다.
      */
     handLayout() {
       const n = this.handOrder.length;
@@ -874,6 +889,7 @@
 
     hitTile(x, y) {
       for (let i = this.handOrder.length - 1; i >= 0; i--) {
+        if (this.handOrder[i] == null) continue; // 이미 낸 타일의 빈 자리는 클릭 대상에서 제외
         const r = this.tileRectAt(i);
         // 겹침 보정: 다음 타일이 덮는 부분은 다음 타일 우선 (역순 탐색으로 해결)
         if (x >= r.x && x <= r.x + r.w && y >= r.y - 6 && y <= r.y + r.h) return i;

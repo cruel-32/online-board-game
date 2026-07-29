@@ -19,6 +19,7 @@
       <div class="hud-secondary">
         <button id="btn-assist" class="btn hud-btn">조합<br>보기</button>
         <button id="btn-sort" class="btn hud-btn">정렬</button>
+        <button id="btn-deselect" class="btn hud-btn" disabled>선택<br>해제</button>
         <button id="btn-rules" class="btn hud-btn">게임룰</button>
       </div>
       <button id="btn-play" class="btn hud-btn-main gold" disabled>내기</button>
@@ -170,6 +171,7 @@
         GameUI.selected.clear();
       });
       $('btn-sort').addEventListener('click', () => GameUI.sortHand());
+      $('btn-deselect').addEventListener('click', () => GameUI.clearSelection());
       $('btn-assist').addEventListener('click', () => { this.renderAssist(); window.Modal.open('assist-popup'); });
       $('btn-rules').addEventListener('click', () => window.Modal.open('rules-popup'));
 
@@ -203,9 +205,10 @@
       if (!this.state) return;
       const s = this.state;
       const myTurn = s.turnId === s.you && !s.finished;
-      const pass = $('btn-pass'), play = $('btn-play');
+      const pass = $('btn-pass'), play = $('btn-play'), deselect = $('btn-deselect');
       if (pass) pass.disabled = !(myTurn && s.table);
       if (play) play.disabled = !GameUI.canPlaySelection();
+      if (deselect) deselect.disabled = GameUI.selected.size === 0;
     },
 
     /* ---------- 오토패스 ---------- */
