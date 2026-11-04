@@ -7,7 +7,7 @@
 const registry = require('./games/registry');
 const store = require('./store');
 
-const BOT_NAMES = ['봇 알파', '봇 브라보', '봇 찰리', '봇 델타'];
+const BOT_NAMES = ['봇 알파', '봇 브라보', '봇 찰리', '봇 델타', '봇 에코', '봇 폭스트롯', '봇 골프', '봇 호텔'];
 
 const clients = new Map(); // clientId -> { clientId, ws, name }
 const rooms = new Map(); // roomId -> room

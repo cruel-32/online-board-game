@@ -553,6 +553,30 @@ for (const pc of [3, 4, 5]) {
     console.log('✅ 러너 순위는 탈락 보고 도착 순서가 아니라 버틴 시간 값 기준');
   }
 
+  // 점프 중계(고스트 재현용): 점프한 사람 본인을 뺀 나머지 전원의 큐에만 쌓이고, 한 번 읽으면
+  // (serialize가 하듯) 비워진다. 탈락했거나 매치가 끝난 뒤의 점프는 무시된다(판정 영향 없음을
+  // 보장하는 선에서 조용히 무시 — 예외를 던지지 않음).
+  {
+    const g = new Game([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+    g.recordJump('a');
+    assert.deepEqual(g.pendingJumps.get('a'), [], '점프한 본인 큐에는 쌓이지 않음');
+    assert.deepEqual(g.pendingJumps.get('b'), ['a'], '나머지 전원의 큐에는 쌓임');
+    assert.deepEqual(g.pendingJumps.get('c'), ['a']);
+
+    // serialize()가 하는 것과 같은 드레인
+    const drained = g.pendingJumps.get('b').slice();
+    g.pendingJumps.get('b').length = 0;
+    assert.deepEqual(drained, ['a']);
+    assert.deepEqual(g.pendingJumps.get('b'), [], '한 번 읽으면 큐가 비워짐');
+    assert.deepEqual(g.pendingJumps.get('c'), ['a'], '다른 뷰어의 큐는 서로 독립적');
+
+    g.pendingJumps.get('c').length = 0; // 드레인(앞선 검증에서 비운 b와 달리 c는 아직 안 비웠음)
+    g.eliminate('a', 1000);
+    g.recordJump('a'); // 탈락한 사람의 점프는 무시
+    assert.deepEqual(g.pendingJumps.get('c'), [], '탈락한 사람의 점프는 중계되지 않음');
+    console.log('✅ 러너 점프 중계(본인 제외·뷰어별 독립 드레인·탈락 후 무시)');
+  }
+
   // 시드 결정론: 같은 시드는 항상 같은 장애물 순서
   {
     const rand1 = RC.mulberry32(777);

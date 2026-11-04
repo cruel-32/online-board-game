@@ -23,12 +23,18 @@ const BOT_TICK_MS = 40;
 function scheduleBotTick(game, room, botId, engine, bot, hooks) {
   setTimeout(() => {
     if (room.game !== game || room.state !== 'playing' || game.finished || !game.alive.has(botId)) return;
+    const jumpsBefore = engine.getState().jumpsUsed;
     bot.step(engine);
+    // 봇도 사람과 똑같이 "점프했다"는 걸 중계해야 다른 클라이언트가 봇의 고스트도 재현할 수 있다.
+    const jumped = engine.getState().jumpsUsed > jumpsBefore;
+    if (jumped) game.recordJump(botId);
     const ev = engine.tick(BOT_TICK_MS);
     if (ev.dead) {
       game.eliminate(botId, ev.elapsedMs);
       hooks.broadcast();
       if (game.finished) { hooks.finish(); return; }
+    } else if (jumped) {
+      hooks.broadcast();
     }
     scheduleBotTick(game, room, botId, engine, bot, hooks);
   }, BOT_TICK_MS);
@@ -39,7 +45,7 @@ module.exports = {
     id: 'runner',
     name: '점프러너',
     minPlayers: 2,
-    maxPlayers: 4,
+    maxPlayers: 8,
     settleDelay: 2500,
   },
 
@@ -72,6 +78,11 @@ module.exports = {
 
   applyAction(game, room, playerId, action) {
     const kind = action && action.kind;
+    if (kind === 'jump') {
+      // 판정에는 전혀 관여하지 않는 순수 중계용 이벤트(다른 클라이언트의 "고스트" 재현용).
+      game.recordJump(playerId);
+      return { ended: game.finished };
+    }
     if (kind !== 'dead') throw new Error('알 수 없는 동작입니다.');
     if (game.alive.has(playerId) && !game.finished) {
       game.eliminate(playerId, action.elapsedMs);
@@ -86,6 +97,12 @@ module.exports = {
   },
 
   serialize(game, room, viewerId) {
+    // 이 뷰어에게 아직 전달하지 않은 "누가 점프했는지" 알림을 실어보내고 큐를 비운다(가비지
+    // 공격 큐와 같은 드레인 패턴) — 받는 쪽은 같은 시드의 로컬 엔진에 jump()만 적용하면 된다.
+    const myJumps = game.pendingJumps.get(viewerId) || [];
+    const jumps = myJumps.slice();
+    myJumps.length = 0;
+
     return {
       gameId: 'runner',
       roomId: room.id,
@@ -94,6 +111,7 @@ module.exports = {
       you: viewerId,
       seed: game.seed,
       lives: game.lives,
+      jumps,
       finished: game.finished,
       winnerName: (() => {
         if (!game.finished || !game.winnerId) return null;

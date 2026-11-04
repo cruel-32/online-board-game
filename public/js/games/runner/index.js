@@ -75,7 +75,7 @@
     renderSetup(container, room, { isHost, send }) {
       const lives = (room.options && room.options.lives) || 1;
       container.innerHTML = `
-        <p class="muted small-text">점프러너는 2~4인 · 점프(+2단 점프)로 장애물을 피하는 실시간 배틀로얄 · 최후 생존 · 봇 추가 가능.</p>
+        <p class="muted small-text">점프러너는 2~8인 · 점프(+2단 점프)로 장애물을 피하는 실시간 배틀로얄 · 최후 생존 · 봇 추가 가능.</p>
         <div class="field inline">
           <span>생명력</span>
           <div class="stepper">
@@ -109,7 +109,7 @@
       canvas.classList.add('runner-viewport'); // 레터박스 캔버스 표시용 마커(별도 스타일 없음)
 
       this.bindings = loadBindings();
-      UI.init(canvas, { onDead: (elapsedMs) => this._onDead(elapsedMs) });
+      UI.init(canvas, { onDead: (elapsedMs) => this._onDead(elapsedMs), onJump: () => this._onJump() });
       this._wire();
       this._rebuildKeyTables();
     },
@@ -130,6 +130,7 @@
       if (this.hudSlot) this.hudSlot.innerHTML = '';
       UI.engine = null; UI.opponents = []; UI.finished = false; UI.myDead = false;
       UI.paused = false; UI.countdownStart = null; UI._lastCountdownLabel = null;
+      UI.ghosts.clear(); UI.ghostSeed = null;
       this.state = null; this.lastSeed = null;
     },
 
@@ -146,7 +147,11 @@
         this.reported = false;
         UI.startLocal(state.seed, state.lives);
       }
-      UI.setOpponents((state.players || []).filter((p) => p.id !== state.you));
+      const opponents = (state.players || []).filter((p) => p.id !== state.you);
+      // 고스트(상대 재현용 로컬 엔진)를 상대마다 하나씩 보장해둔다 — 실제 틱/렌더는 ui.js가 맡는다.
+      for (const p of opponents) UI.ensureGhost(p.id);
+      for (const fromId of (state.jumps || [])) UI.applyGhostJump(fromId);
+      UI.setOpponents(opponents);
       UI.setMeta({ finished: state.finished, winnerName: state.winnerName });
 
       // 상대가 방금 탈락했으면(이전 상태에서는 alive였는데 지금은 아님) 눈에 띄는 알림을 띄운다.
@@ -167,6 +172,12 @@
       if (this.reported) return; // 네트워크 재시도 등으로 중복 보고되지 않도록(1회 보장)
       this.reported = true;
       this.ctx.send({ type: 'game_action', action: { kind: 'dead', elapsedMs } });
+    },
+
+    // 다른 플레이어가 내 "고스트"를 재현할 수 있도록 점프할 때마다 가볍게 알린다. 판정과는
+    // 무관한 순수 연출용 이벤트라 응답을 기다리지 않고 보내고 잊는다(내 입력 반응에 영향 없음).
+    _onJump() {
+      this.ctx.send({ type: 'game_action', action: { kind: 'jump' } });
     },
 
     /* ---------- 입력: 키보드(재배정 가능) + 터치 버튼 ---------- */

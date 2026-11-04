@@ -3,10 +3,13 @@
  * - 내 캐릭터(로컬 엔진이 실시간 시뮬레이션)를 화면 가득 옆으로 스크롤되는 레인에 그린다.
  * - 이 렌더러의 requestAnimationFrame 루프가 로컬 엔진의 tick()도 함께 구동한다. 충돌로
  *   죽으면 callbacks.onDead(elapsedMs)로 네트워킹 쪽에 "버틴 시간"을 1회 보고한다.
- * - 상대는 보드가 없으므로(옆으로 스크롤되는 1차선 게임) 작은 생존시간 랭킹 패널로만 보여준다.
- *   살아있는 상대의 "버틴 시간"은 네트워킹하지 않고 내 로컬 타이머로 근사한다 — 매치 시작이
- *   전원 거의 동시이므로(카운트다운 동기화) 충분히 정확하고, 어차피 서버에 저장되지 않는
- *   연출용 표시일 뿐이다.
+ * - 상대방은 "고스트" — 나와 똑같은 시드로 만든 로컬 엔진 인스턴스를 상대 대신 들고 있다가,
+ *   서버가 중계해주는 "상대가 점프했다"는 알림만 받으면 그 엔진에 jump()를 적용한다. 장애물은
+ *   시드+경과시간만으로 100% 결정론적이라(러너 코어 참고) 그 외에는 네트워킹이 필요 없다 —
+ *   매 프레임 내 엔진처럼 로컬에서 tick()을 돌리기만 하면 상대의 실제 장애물·점프를 그대로
+ *   재현해 작은 미니 뷰로 보여줄 수 있다. 내 입력 반응성에는 전혀 영향을 주지 않는다(순수
+ *   연출이며, 혹시 이벤트가 씹혀도 — 판정에 쓰이는 game_action은 "죽음" 보고 하나뿐이므로 —
+ *   승패·순위에는 전혀 지장이 없다).
  */
 (function () {
   'use strict';
@@ -34,6 +37,8 @@
     deathToasts: [], // [{text, start, until}] — 상대가 죽을 때마다 쌓이는 큰 알림(가시성 강화)
     hitFlashUntil: 0, // 생명력이 남아 살아남은 피격 순간의 화면 플래시
     shakeUntil: 0,     // 같은 순간의 화면 흔들림
+    ghosts: new Map(), // id -> { engine } — 상대방 재현용 로컬 엔진(나와 같은 시드)
+    ghostSeed: null, ghostLives: 1,
 
     init(canvas, callbacks) {
       this.canvas = canvas;
@@ -66,6 +71,7 @@
           if (ev.dead) this._reportDead(ev.elapsedMs);
           else if (ev.hit) this._onHit();
         }
+        if (!this.paused) this._tickGhosts(dt);
         this.render();
         requestAnimationFrame(loop);
       };
@@ -97,6 +103,33 @@
       this.hitFlashUntil = 0;
       this.shakeUntil = 0;
       this.localStartAnim = null; // paused가 풀리는 순간(카운트다운 종료) 기록 — 내가 죽어도 계속 흐르는 독립 시계
+      this.ghostSeed = seed;
+      this.ghostLives = lives;
+      this.ghosts.clear(); // 새 매치 — 고스트도 처음부터 새로 만든다(index.js가 이어서 ensureGhost로 채움)
+    },
+
+    /* ---------- 상대방 "고스트"(나와 같은 시드의 로컬 엔진으로 실제 진행 상황을 그대로 재현) ---------- */
+    ensureGhost(id) {
+      if (this.ghosts.has(id) || this.ghostSeed == null) return;
+      this.ghosts.set(id, { engine: Engine.createEngine(this.ghostSeed, this.ghostLives) });
+    },
+
+    applyGhostJump(id) {
+      const g = this.ghosts.get(id);
+      if (g) g.engine.jump();
+    },
+
+    _tickGhosts(dt) {
+      for (const o of this.opponents) {
+        if (!o.alive) continue; // 탈락한 상대는 더 이상 진행시키지 않는다(마지막 모습에서 멈춤)
+        const g = this.ghosts.get(o.id);
+        if (!g) continue;
+        // 안전장치: 점프 알림이 어쩌다 씹혀 고스트가 실제보다 먼저(시뮬레이션상) 죽어버렸는데
+        // 서버는 아직 살아있다고 하면, 고스트를 새로 시작해 계속 달리는 모습을 보여준다 —
+        // 애초에 "눈대중 재현"이 목적이라 완벽히 같을 필요는 없다.
+        if (g.engine.getState().dead) g.engine = Engine.createEngine(this.ghostSeed, this.ghostLives);
+        g.engine.tick(dt);
+      }
     },
 
     _updateCountdown() {
@@ -153,10 +186,13 @@
     jump() {
       if (!this.engine || this.myDead || this.finished || this.paused) return;
       const st = this.engine.getState();
-      if (this.engine.jump() && window.Sound) {
-        if (st.jumpsUsed === 0) window.Sound.jump();
-        else window.Sound.doubleJump();
+      const wasFirstJump = st.jumpsUsed === 0;
+      if (this.engine.jump()) {
+        if (window.Sound) (wasFirstJump ? window.Sound.jump : window.Sound.doubleJump)();
         this._spawnDust();
+        // 다른 플레이어가 내 "고스트"를 재현할 수 있도록 점프 사실을 알린다(판정과 무관한
+        // 순수 연출용 — 유실돼도 내 플레이에는 전혀 영향 없다).
+        if (this.callbacks.onJump) this.callbacks.onJump();
       }
     },
 
@@ -192,7 +228,7 @@
       this.drawScene(ctx);
       ctx.restore();
       this.drawHitFlash(ctx);
-      this.drawRanking(ctx, L);
+      this.drawOpponentPanels(ctx, L);
       this.drawTimer(ctx);
       this.drawHearts(ctx);
       if (this.myDead && !this.finished) this.drawDeadBanner(ctx);
@@ -348,7 +384,9 @@
       ctx.restore();
     },
 
-    // 플레이어 = 토끼. 점프할 때 귀가 뒤로 눕고, 착지해 있을 땐 발을 까딱이며 달린다.
+    // 플레이어 = 토끼. 정면이 아니라 진행 방향(오른쪽, 장애물이 다가오는 쪽)을 보는 옆모습으로
+    // 그린다 — 머리와 주둥이가 오른쪽으로 튀어나와 있어야 눈 하나가 "외눈박이"가 아니라
+    // 자연스러운 옆얼굴로 읽힌다. 점프하면 귀가 뒤로 눕고, 착지해 있을 땐 발을 까딱이며 달린다.
     // 충돌하면(dead) 털이 발그레해지고 눈이 "X"로 바뀌어 기절한 티를 낸다.
     drawPlayer(ctx, st) {
       const y = GROUND_Y - PLAYER_H - st.airHeight;
@@ -357,7 +395,17 @@
       const yy = y + (PLAYER_H - h);
       const dead = !!this.myDead;
       const furColor = dead ? '#ffc2b8' : '#fff6ec';
-      const earLean = Math.max(-0.55, Math.min(0.55, -st.vy / 18));
+      const muzzleColor = dead ? '#ffd6ce' : '#fffdfa';
+      // 점프 중 가속도에 따라 귀가 더 눕거나(상승) 서거나(하강) 한다.
+      const earLean = Math.max(-0.35, Math.min(0.35, -st.vy / 22));
+
+      // 머리를 몸통 "앞쪽 위"가 아니라 거의 "바로 위"에 둬서, 등이 둥글게 말린 것처럼 보이지
+      // 않고 목을 세운 듯 똑바로 선 자세로 읽히게 한다(머리-몸통 사이에 살짝 틈을 둬 구분감도 줌).
+      // 머리를 몸통보다 눈에 띄게 크게 둬(치비 비율) 더 귀여워 보이게 한다.
+      const bodyX = -w * 0.02, bodyY = h * 0.24, bodyRX = w * 0.3, bodyRY = h * 0.33;
+      const headX = w * 0.1, headY = -h * 0.5, headR = w * 0.42;
+      const snoutX = headX + headR * 0.88, snoutY = headY + headR * 0.14, snoutR = headR * 0.42;
+      const eyeX = headX + headR * 0.2, eyeY = headY - headR * 0.14;
 
       // 무적 중에는 실시간(anim) 기준으로 깜빡인다 — 엔진 틱이 아니라 실제 경과 시간을 써서
       // 프레임레이트와 무관하게 일정한 주기로 깜빡이게 한다.
@@ -368,63 +416,90 @@
       }
       ctx.translate(PLAYER_X + w / 2, yy + h / 2);
 
-      // 귀(머리 뒤에서 솟아오름 — 몸통보다 먼저 그려 밑동이 가려지게 함)
-      for (const side of [-1, 1]) {
+      // 귀(머리 뒤쪽에서 솟아오름 — 머리보다 먼저 그려 밑동이 가려지게 함). 뒤쪽 귀 하나,
+      // 살짝 앞쪽에 겹치는 귀 하나를 둬서 입체감을 준다.
+      const earBase = -0.3 + earLean;
+      [[-0.1, 0], [0.08, w * 0.05]].forEach(([angleOfs, xOfs]) => {
         ctx.save();
-        ctx.translate(side * w * 0.2, -h * 0.4);
-        ctx.rotate(side * 0.32 + earLean);
+        ctx.translate(headX - headR * 0.15 + xOfs, headY - headR * 0.55);
+        ctx.rotate(earBase + angleOfs);
         ctx.fillStyle = furColor;
-        this._rr(ctx, -w * 0.09, -h * 0.72, w * 0.18, h * 0.74, w * 0.09);
+        this._rr(ctx, -w * 0.1, -h * 0.74, w * 0.2, h * 0.76, w * 0.1);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(120,80,70,0.45)';
+        ctx.strokeStyle = 'rgba(120,80,70,0.4)';
         ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.fillStyle = '#ffc9d6';
-        this._rr(ctx, -w * 0.045, -h * 0.6, w * 0.09, h * 0.5, w * 0.045);
+        this._rr(ctx, -w * 0.05, -h * 0.63, w * 0.1, h * 0.52, w * 0.05);
         ctx.fill();
         ctx.restore();
-      }
+      });
 
-      // 몸통(동그랗게)
-      ctx.fillStyle = furColor;
-      this._rr(ctx, -w / 2, -h / 2, w, h, w * 0.4);
+      // 꼬리(몸통 뒤쪽 뭉치)
+      ctx.fillStyle = muzzleColor;
+      ctx.beginPath();
+      ctx.arc(bodyX - bodyRX * 0.85, bodyY + bodyRY * 0.2, w * 0.13, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(120,80,70,0.45)';
+
+      // 몸통
+      ctx.fillStyle = furColor;
+      ctx.beginPath();
+      ctx.ellipse(bodyX, bodyY, bodyRX, bodyRY, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(120,80,70,0.4)';
       ctx.lineWidth = 2;
       ctx.stroke();
 
-      // 배(밝은 패치) + 볼터치
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      // 머리(몸통 앞쪽 위에 얹음 — 진행 방향인 오른쪽으로 튀어나와 옆모습을 만듦)
+      ctx.fillStyle = furColor;
       ctx.beginPath();
-      ctx.ellipse(0, h * 0.2, w * 0.27, h * 0.22, 0, 0, Math.PI * 2);
+      ctx.arc(headX, headY, headR, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = 'rgba(255,150,170,0.5)';
-      ctx.beginPath(); ctx.arc(-w * 0.28, h * 0.02, w * 0.09, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(w * 0.28, h * 0.02, w * 0.09, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = 'rgba(120,80,70,0.4)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
 
-      // 눈 — 기절했으면 X, 아니면 반짝이는 동그란 눈
+      // 주둥이(머리보다 더 앞으로 튀어나온 옅은 패치 — 이게 있어야 "옆을 보는 얼굴"로 읽힘)
+      ctx.fillStyle = muzzleColor;
+      ctx.beginPath();
+      ctx.ellipse(snoutX, snoutY, snoutR, snoutR * 0.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 배(밝은 패치) + 볼터치(눈 아래, 주둥이 쪽)
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.beginPath();
+      ctx.ellipse(bodyX + bodyRX * 0.1, bodyY + bodyRY * 0.35, bodyRX * 0.6, bodyRY * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,150,170,0.55)';
+      ctx.beginPath();
+      ctx.arc(snoutX - snoutR * 0.3, snoutY + snoutR * 0.5, w * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 눈 — 진행 방향 쪽에 하나만(옆모습이므로 반대쪽 눈은 가려져 안 보이는 게 자연스럽다).
+      // 기절했으면 X, 아니면 반짝이는 동그란 눈.
       if (dead) {
         ctx.strokeStyle = '#6b3b30';
         ctx.lineWidth = 2;
-        const ex = w * 0.13, ey = -h * 0.1, r = w * 0.07;
+        const r = w * 0.065;
         ctx.beginPath();
-        ctx.moveTo(ex - r, ey - r); ctx.lineTo(ex + r, ey + r);
-        ctx.moveTo(ex + r, ey - r); ctx.lineTo(ex - r, ey + r);
+        ctx.moveTo(eyeX - r, eyeY - r); ctx.lineTo(eyeX + r, eyeY + r);
+        ctx.moveTo(eyeX + r, eyeY - r); ctx.lineTo(eyeX - r, eyeY + r);
         ctx.stroke();
       } else {
         ctx.fillStyle = '#2a1f1a';
         ctx.beginPath();
-        ctx.arc(w * 0.13, -h * 0.1, Math.max(2, w * 0.075), 0, Math.PI * 2);
+        ctx.arc(eyeX, eyeY, Math.max(2, w * 0.072), 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#fff';
         ctx.beginPath();
-        ctx.arc(w * 0.16, -h * 0.13, Math.max(1, w * 0.025), 0, Math.PI * 2);
+        ctx.arc(eyeX + w * 0.025, eyeY - w * 0.025, Math.max(1, w * 0.026), 0, Math.PI * 2);
         ctx.fill();
       }
-      // 코(작은 분홍 세모)
+
+      // 코(주둥이 끝의 작은 분홍 코)
       ctx.fillStyle = '#ff8fa3';
       ctx.beginPath();
-      ctx.ellipse(w * 0.02, -h * 0.01, w * 0.045, w * 0.03, 0, 0, Math.PI * 2);
+      ctx.ellipse(snoutX + snoutR * 0.75, snoutY - snoutR * 0.1, w * 0.045, w * 0.032, 0.3, 0, Math.PI * 2);
       ctx.fill();
 
       // 2단 점프 중일 때 잔상 느낌의 궤적
@@ -497,51 +572,143 @@
       }
     },
 
-    drawRanking(ctx, L) {
+    // 상대방 패널 — 각자의 "고스트" 엔진이 실제로 시뮬레이션한 장애물·점프를 작은 미니 레인에
+    // 그대로 그린다(생존 중일 때만). 탈락한 상대는 더 그릴 게 없으므로 해골+최종 기록만 보여준다.
+    drawOpponentPanels(ctx, L) {
       const others = this.opponents;
       if (!others.length) return;
-      const liveMs = this.liveElapsedMs();
-      const rows = others.map((o) => ({
-        name: o.name, alive: o.alive,
-        // 매치가 끝나면 서버가 이미 전원의 최종 기록을 확정해 보내주므로, 더 이상 흐르는 추정치
-        // 대신 그 값을 그대로 쓴다(그렇지 않으면 결과 팝업이 뜬 뒤에도 숫자가 계속 올라가 보임).
-        ms: (o.alive && !this.finished) ? liveMs : (o.survivedMs || 0),
-      }));
       // 아직 살아있는 쪽을 위로 모아 "누가 아직 위협적인지"를 한눈에 보기 쉽게 한다.
-      rows.sort((a, b) => (b.alive - a.alive));
-      const x = L.x + L.w - 8, yTop = L.y + 8;
-      const rowW = 158, rowH = 22;
+      const sorted = others.slice().sort((a, b) => (b.alive - a.alive));
+      const n = sorted.length;
+      const rowW = 130, gap = 10; // 줄 사이 간격을 넉넉히 둬서 인원이 많아도 겹쳐 보이지 않게 함
+      const top = L.y + 6, bottom = L.y + L.h - 6;
+      const availableH = Math.max(0, bottom - top);
+      // 한 줄 높이는 "최대 54px"에서 시작해, 인원이 많아 다 안 들어가면 최소 22px(텍스트만
+      // 보이는 압축 모드)까지 줄어든다 — 줄이 늘어나도 서로 겹치는 대신 한 줄 한 줄이 작아진다.
+      const rowH = Math.max(22, Math.min(54, Math.floor((availableH - (n - 1) * gap) / n)));
+      const x = L.x + L.w - rowW - 6;
+      let y = top;
       ctx.save();
-      rows.forEach((r, i) => {
-        const y = yTop + i * rowH;
-        ctx.globalAlpha = r.alive ? 1 : 0.55;
-        ctx.fillStyle = 'rgba(0,0,0,0.4)';
-        this._rr(ctx, x - rowW, y - 15, rowW, 19, 5);
-        ctx.fill();
-        // 생존 표시 점(초록 네온 = 생존, 회색 = 탈락) — 색만으로도 바로 구분되게.
-        const dotX = x - rowW + 10, dotY = y - 5;
-        ctx.beginPath();
-        ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
-        if (r.alive) {
-          ctx.fillStyle = '#4ee37a';
-          ctx.shadowColor = '#4ee37a';
-          ctx.shadowBlur = 6;
-        } else {
-          ctx.fillStyle = '#7a8090';
-          ctx.shadowBlur = 0;
-        }
-        ctx.fill();
-        ctx.shadowBlur = 0;
+      for (const o of sorted) {
+        this.drawOpponentRow(ctx, o, x, y, rowW, rowH);
+        y += rowH + gap;
+      }
+      ctx.restore();
+    },
 
-        ctx.textAlign = 'right';
-        ctx.font = r.alive ? '800 12px sans-serif' : '700 12px sans-serif';
-        ctx.fillStyle = r.alive ? '#eaf6ff' : '#9099a8';
-        const label = `${(r.name || '').slice(0, 8)}${r.alive ? '' : ' 💀'}`;
-        ctx.fillText(label, x - 4, y - 7);
+    drawOpponentRow(ctx, o, x, y, w, h) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      this._rr(ctx, x, y, w, h, 6);
+      ctx.fill();
+      ctx.strokeStyle = o.alive ? 'rgba(90,209,255,0.3)' : 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      const liveMs = this.liveElapsedMs();
+      const ms = (o.alive && !this.finished) ? liveMs : (o.survivedMs || 0);
+      const compact = h < 36; // 인원이 많아 줄이 빽빽해지면 미니 장면 없이 한 줄 텍스트로만 보여줌
+
+      if (compact) {
+        ctx.textAlign = 'left';
         ctx.font = '700 11px sans-serif';
-        ctx.fillStyle = r.alive ? '#9fe8ff' : '#747b89';
-        ctx.fillText(fmtTime(r.ms), x - 4, y + 6);
-      });
+        ctx.fillStyle = o.alive ? '#eaf6ff' : '#9099a8';
+        ctx.fillText(`${(o.name || '').slice(0, 8)}${o.alive ? '' : ' 💀'}`, x + 6, y + h / 2 + 4);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = o.alive ? '#9fe8ff' : '#747b89';
+        ctx.fillText(fmtTime(ms), x + w - 6, y + h / 2 + 4);
+        ctx.restore();
+        return;
+      }
+
+      const sceneY = y + 3, sceneH = h - 17, sceneX = x + 3, sceneW = w - 6;
+      const ghost = o.alive ? this.ghosts.get(o.id) : null;
+
+      if (ghost) {
+        this.drawGhostScene(ctx, ghost.engine.getState(), sceneX, sceneY, sceneW, sceneH);
+      } else {
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.textAlign = 'center';
+        ctx.font = `${Math.round(sceneH * 0.65)}px sans-serif`;
+        ctx.fillText('💀', x + w / 2, sceneY + sceneH * 0.8);
+        ctx.restore();
+      }
+
+      // 생존 표시 점(초록 네온 = 생존, 회색 = 탈락)
+      ctx.beginPath();
+      ctx.arc(x + w - 8, sceneY + 7, 3, 0, Math.PI * 2);
+      if (o.alive) { ctx.fillStyle = '#4ee37a'; ctx.shadowColor = '#4ee37a'; ctx.shadowBlur = 5; }
+      else ctx.fillStyle = '#7a8090';
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // 이름 + 시간
+      ctx.textAlign = 'left';
+      ctx.font = '700 10px sans-serif';
+      ctx.fillStyle = o.alive ? '#eaf6ff' : '#9099a8';
+      ctx.fillText((o.name || '').slice(0, 10), x + 4, y + h - 4);
+      ctx.textAlign = 'right';
+      ctx.fillStyle = o.alive ? '#9fe8ff' : '#747b89';
+      ctx.fillText(fmtTime(ms), x + w - 4, y + h - 4);
+      ctx.restore();
+    },
+
+    // 고스트 엔진 상태를 작은 사각형(sceneX,sceneY,sceneW,sceneH) 안에 간략화해 그린다.
+    // 장애물은 그리지 않는다 — 고스트는 어디까지나 근사 재현이라 실제 장애물 위치와는
+    // 체감상 차이가 날 수 있어서, 오해를 주지 않도록 "달리는/점프하는 모습"만 보여준다.
+    drawGhostScene(ctx, st, sceneX, sceneY, sceneW, sceneH) {
+      const scale = sceneH / WORLD_H;
+      const groundY = sceneY + GROUND_Y * scale;
+      const px = sceneX + sceneW / 2; // 장애물이 없으니 기준점은 그냥 가운데로 고정
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(sceneX, sceneY, sceneW, sceneH);
+      ctx.clip();
+
+      ctx.strokeStyle = 'rgba(200,220,255,0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sceneX, groundY);
+      ctx.lineTo(sceneX + sceneW, groundY);
+      ctx.stroke();
+
+      const blinkOn = !st.invincible || Math.floor(this.anim / core.BLINK_INTERVAL_MS) % 2 === 0;
+      if (blinkOn) {
+        const pw = Math.max(7, PLAYER_W * scale), ph = Math.max(7, PLAYER_H * scale);
+        const pTop = groundY - ph - st.airHeight * scale;
+        // 다리(달리는 느낌 — 바닥에 있을 때만)
+        if (st.grounded) {
+          const t = this.anim / 70;
+          ctx.strokeStyle = '#fff6ec';
+          ctx.lineWidth = Math.max(1.5, pw * 0.14);
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(px - pw * 0.18, groundY - ph * 0.08);
+          ctx.lineTo(px - pw * 0.18 + Math.sin(t) * pw * 0.2, groundY);
+          ctx.moveTo(px + pw * 0.18, groundY - ph * 0.08);
+          ctx.lineTo(px + pw * 0.18 + Math.sin(t + Math.PI) * pw * 0.2, groundY);
+          ctx.stroke();
+          ctx.lineCap = 'butt';
+        }
+        ctx.fillStyle = '#fff6ec';
+        this._rr(ctx, px - pw / 2, pTop, pw, ph, pw * 0.4);
+        ctx.fill();
+        // 귀(진행 방향을 알 수 있게 살짝 앞쪽으로 기울여 붙임)
+        ctx.beginPath();
+        ctx.moveTo(px - pw * 0.1, pTop + ph * 0.1);
+        ctx.lineTo(px - pw * 0.22, pTop - ph * 0.55);
+        ctx.lineTo(px + pw * 0.08, pTop + ph * 0.02);
+        ctx.closePath();
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(px + pw * 0.12, pTop + ph * 0.02);
+        ctx.lineTo(px + pw * 0.24, pTop - ph * 0.5);
+        ctx.lineTo(px + pw * 0.38, pTop + ph * 0.12);
+        ctx.closePath();
+        ctx.fill();
+      }
       ctx.restore();
     },
 

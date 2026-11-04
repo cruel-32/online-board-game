@@ -20,6 +20,11 @@ const core = require('../../../../public/shared/runner-core.js');
  * 도착해 eliminate() 호출 자체는 먼저 일어날 수 있다(봇은 서버가 직접 틱을 돌려 지연이 없음).
  * 호출 순서로 순위를 매기면 이런 경우 실제 생존 시간과 거꾸로 된 순위가 나올 수 있어,
  * 신뢰하는 값(survivedMs) 자체를 기준으로 정렬한다.
+ *
+ * 다른 플레이어의 "실제 진행 상황"을 보여주기 위한 점프 이벤트 중계: 장애물은 시드+경과시간만
+ * 으로 100% 결정론적이라(createEngine 참고), 각 클라이언트가 상대방과 "언제 점프했는지"만
+ * 알면 똑같은 시드로 상대의 로컬 엔진을 그대로 재현("고스트")해 그릴 수 있다. pendingJumps는
+ * 그 점프 알림을 뷰어별로 쌓아뒀다가 serialize()가 드레인하는 큐다(가비지 공격 큐와 같은 패턴).
  */
 class Game {
   constructor(players, lives) {
@@ -30,6 +35,7 @@ class Game {
     this.alive = new Set(this.playerIds);
     this.survivedMs = new Map(this.playerIds.map((id) => [id, 0]));
     this.botEngines = new Map(); // botId -> RunnerEngine 인스턴스(서버가 직접 시뮬레이션)
+    this.pendingJumps = new Map(this.playerIds.map((id) => [id, []])); // 뷰어별 "아직 못 받은 남의 점프 알림" 큐
     this.finished = false;
     this.winnerId = null;
   }
@@ -39,6 +45,16 @@ class Game {
     this.survivedMs.set(pid, Math.max(0, Math.round(survivedMs || 0)));
     this.alive.delete(pid);
     this.checkEnd();
+  }
+
+  // fromId가 점프했음을 본인을 제외한 모두에게 알린다(고스트 재현용). 판정에는 영향 없는
+  // 순수 연출 이벤트라, 유실돼도(예: 그 사이 라운드가 끝남) 게임 결과엔 아무 지장이 없다.
+  recordJump(fromId) {
+    if (!this.alive.has(fromId) || this.finished) return;
+    for (const pid of this.playerIds) {
+      if (pid === fromId) continue;
+      this.pendingJumps.get(pid).push(fromId);
+    }
   }
 
   checkEnd() {
