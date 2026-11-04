@@ -244,6 +244,29 @@
       ctx.fillRect(0, 0, this.W, this.H);
     },
 
+    // 둥근 사각형 경로(roundRect 미지원 브라우저는 그냥 사각형으로). beginPath까지 포함하므로
+    // 호출부는 바로 fill()/stroke()만 하면 된다.
+    _rr(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y, w, h, r);
+      else ctx.rect(x, y, w, h);
+    },
+
+    // 반짝이는 눈 한 쌍(장애물 캐릭터용) — 흰자 위에 색이 있는 동공을 살짝 발광시켜 그린다.
+    _drawEyePair(ctx, cx, cy, spread, glowColor, r) {
+      r = r || 2.6;
+      for (const side of [-1, 1]) {
+        const ex = cx + side * spread;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath(); ctx.arc(ex, cy, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = glowColor;
+        ctx.shadowColor = glowColor;
+        ctx.shadowBlur = 4;
+        ctx.beginPath(); ctx.arc(ex, cy, r * 0.5, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+    },
+
     drawScene(ctx) {
       const st = this.engine ? this.engine.getState() : null;
 
@@ -272,26 +295,69 @@
       this.drawDust(ctx);
     },
 
+    // 장애물 = 적 괴물 캐릭터. tall(타워형)은 여러 쌍의 눈이 세로로 달린 키 큰 괴물로 그려
+    // "2단 점프로만 넘을 수 있다"는 걸 높이뿐 아니라 생김새로도 암시한다.
     drawObstacle(ctx, o) {
-      const x = o.x, h = o.h, y = GROUND_Y - h;
-      ctx.fillStyle = o.tall ? '#8a4de0' : '#39404f';
-      ctx.strokeStyle = o.tall ? '#c9a6ff' : '#161b24';
+      const w = o.w, h = o.h, y = GROUND_Y - h;
+      const bodyColor = o.tall ? '#8a4de0' : '#454e60';
+      const edgeColor = o.tall ? '#5b2f99' : '#1b1f28';
+      const eyeGlow = o.tall ? '#ffe28a' : '#ff5a5a';
+
+      ctx.save();
+      ctx.translate(o.x + w / 2, 0);
+
+      // 몸통(아래는 바닥에 붙고 위는 둥글게)
+      ctx.fillStyle = bodyColor;
+      this._rr(ctx, -w / 2, y, w, h, Math.min(w * 0.4, 10));
+      ctx.fill();
+      ctx.strokeStyle = edgeColor;
       ctx.lineWidth = 2;
-      ctx.fillRect(x, y, o.w, h);
-      ctx.strokeRect(x, y, o.w, h);
-      if (o.tall) {
-        // 2단 점프가 필요함을 암시하는 줄무늬
-        ctx.fillStyle = 'rgba(255,255,255,0.25)';
-        for (let i = 0; i < 3; i++) ctx.fillRect(x + 2, y + 6 + i * (h / 3.4), o.w - 4, 4);
+      ctx.stroke();
+
+      // 머리 위 뿔(멀리서도 "장애물"임을 바로 읽히게 하는 실루엣)
+      const horns = o.tall ? 1 : (w > 26 ? 2 : 1);
+      ctx.fillStyle = edgeColor;
+      for (let i = 0; i < horns; i++) {
+        const hx = horns === 1 ? 0 : (i === 0 ? -w * 0.22 : w * 0.22);
+        ctx.beginPath();
+        ctx.moveTo(hx - w * 0.16, y + 3);
+        ctx.lineTo(hx + w * 0.16, y + 3);
+        ctx.lineTo(hx, y - Math.min(10, h * 0.12));
+        ctx.closePath();
+        ctx.fill();
       }
+
+      if (o.tall) {
+        // 세그먼트마다 눈이 달린 토템형 괴물
+        for (let i = 0; i < 3; i++) this._drawEyePair(ctx, 0, y + h * (0.2 + i * 0.27), w * 0.17, eyeGlow);
+      } else {
+        this._drawEyePair(ctx, 0, y + h * 0.32, w * 0.18, eyeGlow);
+        // 이빨(지그재그)
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        const toothY = y + h * 0.56, n = 3, step = (w * 0.44) / (n - 1);
+        for (let i = 0; i < n; i++) {
+          const tx = -w * 0.22 + i * step;
+          ctx.moveTo(tx, toothY);
+          ctx.lineTo(tx + step * 0.5, toothY + h * 0.08);
+          ctx.lineTo(tx + step, toothY);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
     },
 
+    // 플레이어 = 토끼. 점프할 때 귀가 뒤로 눕고, 착지해 있을 땐 발을 까딱이며 달린다.
+    // 충돌하면(dead) 털이 발그레해지고 눈이 "X"로 바뀌어 기절한 티를 낸다.
     drawPlayer(ctx, st) {
       const y = GROUND_Y - PLAYER_H - st.airHeight;
       const squash = st.grounded ? 1 : Math.max(0.82, 1 - Math.abs(st.vy) / 60);
       const w = PLAYER_W, h = PLAYER_H * squash;
       const yy = y + (PLAYER_H - h);
       const dead = !!this.myDead;
+      const furColor = dead ? '#ffc2b8' : '#fff6ec';
+      const earLean = Math.max(-0.55, Math.min(0.55, -st.vy / 18));
 
       // 무적 중에는 실시간(anim) 기준으로 깜빡인다 — 엔진 틱이 아니라 실제 경과 시간을 써서
       // 프레임레이트와 무관하게 일정한 주기로 깜빡이게 한다.
@@ -301,22 +367,69 @@
         ctx.globalAlpha = blinkOn ? 1 : 0.3;
       }
       ctx.translate(PLAYER_X + w / 2, yy + h / 2);
-      // 몸통(충돌 시 붉게)
-      ctx.fillStyle = dead ? '#ff6b57' : '#5ad1ff';
-      ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(-w / 2, -h / 2, w, h, 8) : ctx.rect(-w / 2, -h / 2, w, h);
+
+      // 귀(머리 뒤에서 솟아오름 — 몸통보다 먼저 그려 밑동이 가려지게 함)
+      for (const side of [-1, 1]) {
+        ctx.save();
+        ctx.translate(side * w * 0.2, -h * 0.4);
+        ctx.rotate(side * 0.32 + earLean);
+        ctx.fillStyle = furColor;
+        this._rr(ctx, -w * 0.09, -h * 0.72, w * 0.18, h * 0.74, w * 0.09);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(120,80,70,0.45)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.fillStyle = '#ffc9d6';
+        this._rr(ctx, -w * 0.045, -h * 0.6, w * 0.09, h * 0.5, w * 0.045);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // 몸통(동그랗게)
+      ctx.fillStyle = furColor;
+      this._rr(ctx, -w / 2, -h / 2, w, h, w * 0.4);
       ctx.fill();
-      ctx.strokeStyle = 'rgba(10,14,22,0.6)';
+      ctx.strokeStyle = 'rgba(120,80,70,0.45)';
       ctx.lineWidth = 2;
       ctx.stroke();
-      // 눈
-      ctx.fillStyle = '#0d1320';
+
+      // 배(밝은 패치) + 볼터치
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
       ctx.beginPath();
-      ctx.arc(w * 0.14, -h * 0.18, Math.max(2, w * 0.07), 0, Math.PI * 2);
+      ctx.ellipse(0, h * 0.2, w * 0.27, h * 0.22, 0, 0, Math.PI * 2);
       ctx.fill();
-      // 2단 점프 중일 때 잔상 느낌의 궤적 점
+      ctx.fillStyle = 'rgba(255,150,170,0.5)';
+      ctx.beginPath(); ctx.arc(-w * 0.28, h * 0.02, w * 0.09, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(w * 0.28, h * 0.02, w * 0.09, 0, Math.PI * 2); ctx.fill();
+
+      // 눈 — 기절했으면 X, 아니면 반짝이는 동그란 눈
+      if (dead) {
+        ctx.strokeStyle = '#6b3b30';
+        ctx.lineWidth = 2;
+        const ex = w * 0.13, ey = -h * 0.1, r = w * 0.07;
+        ctx.beginPath();
+        ctx.moveTo(ex - r, ey - r); ctx.lineTo(ex + r, ey + r);
+        ctx.moveTo(ex + r, ey - r); ctx.lineTo(ex - r, ey + r);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = '#2a1f1a';
+        ctx.beginPath();
+        ctx.arc(w * 0.13, -h * 0.1, Math.max(2, w * 0.075), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(w * 0.16, -h * 0.13, Math.max(1, w * 0.025), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 코(작은 분홍 세모)
+      ctx.fillStyle = '#ff8fa3';
+      ctx.beginPath();
+      ctx.ellipse(w * 0.02, -h * 0.01, w * 0.045, w * 0.03, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 2단 점프 중일 때 잔상 느낌의 궤적
       if (!st.grounded && st.jumpsUsed >= 2) {
-        ctx.strokeStyle = 'rgba(90,209,255,0.5)';
+        ctx.strokeStyle = 'rgba(255,201,214,0.6)';
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.arc(0, h * 0.7, w * 0.6, 0.2, Math.PI - 0.2);
@@ -324,19 +437,25 @@
       }
       ctx.restore();
 
-      // 다리(달리는 애니메이션) — 바닥에 있을 때만
+      // 다리(달리는 애니메이션 + 발바닥) — 바닥에 있을 때만
       if (st.grounded) {
         const t = this.anim / 70;
-        ctx.strokeStyle = dead ? '#ff6b57' : '#5ad1ff';
-        ctx.lineWidth = 4;
+        const leg1x = PLAYER_X + w * 0.32 + Math.sin(t) * 5;
+        const leg2x = PLAYER_X + w * 0.68 + Math.sin(t + Math.PI) * 5;
+        ctx.strokeStyle = furColor;
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(PLAYER_X + w * 0.3, y + h);
-        ctx.lineTo(PLAYER_X + w * 0.3 + Math.sin(t) * 6, GROUND_Y);
-        ctx.moveTo(PLAYER_X + w * 0.7, y + h);
-        ctx.lineTo(PLAYER_X + w * 0.7 + Math.sin(t + Math.PI) * 6, GROUND_Y);
+        ctx.moveTo(PLAYER_X + w * 0.32, y + h * 0.9);
+        ctx.lineTo(leg1x, GROUND_Y - 2);
+        ctx.moveTo(PLAYER_X + w * 0.68, y + h * 0.9);
+        ctx.lineTo(leg2x, GROUND_Y - 2);
         ctx.stroke();
+        ctx.lineCap = 'butt';
+        ctx.fillStyle = furColor;
+        ctx.beginPath(); ctx.ellipse(leg1x, GROUND_Y - 1, 4, 2.4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(leg2x, GROUND_Y - 1, 4, 2.4, 0, 0, Math.PI * 2); ctx.fill();
       }
-      ctx.restore();
     },
 
     drawDust(ctx) {
@@ -397,9 +516,7 @@
         const y = yTop + i * rowH;
         ctx.globalAlpha = r.alive ? 1 : 0.55;
         ctx.fillStyle = 'rgba(0,0,0,0.4)';
-        ctx.beginPath();
-        if (ctx.roundRect) ctx.roundRect(x - rowW, y - 15, rowW, 19, 5);
-        else ctx.rect(x - rowW, y - 15, rowW, 19);
+        this._rr(ctx, x - rowW, y - 15, rowW, 19, 5);
         ctx.fill();
         // 생존 표시 점(초록 네온 = 생존, 회색 = 탈락) — 색만으로도 바로 구분되게.
         const dotX = x - rowW + 10, dotY = y - 5;
@@ -502,8 +619,7 @@
       const w = ctx.measureText(label).width + 40;
       ctx.shadowColor = '#ffd76e'; ctx.shadowBlur = 20 * pulse;
       ctx.fillStyle = 'rgba(20,16,8,0.85)';
-      ctx.beginPath();
-      ctx.roundRect ? ctx.roundRect(this.W / 2 - w / 2, this.H / 2 - 26, w, 52, 14) : ctx.rect(this.W / 2 - w / 2, this.H / 2 - 26, w, 52);
+      this._rr(ctx, this.W / 2 - w / 2, this.H / 2 - 26, w, 52, 14);
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.fillStyle = `rgba(255,231,176,${0.85 + 0.15 * pulse})`;
