@@ -259,6 +259,18 @@
       tone(784, { type: 'sine', dur: 0.12, gain: 0.16, delay: 0.2 });
       tone(1047, { type: 'sine', dur: 0.32, gain: 0.2, delay: 0.3 });
     },
+    // 러너: 점프 — 짧게 솟아오르는 상승음
+    jump() {
+      tone(480, { type: 'square', dur: 0.1, gain: 0.14, endFreq: 760 });
+    },
+    // 러너: 2단 점프 — 1단보다 높고 더 날카롭게
+    doubleJump() {
+      tone(700, { type: 'square', dur: 0.12, gain: 0.16, endFreq: 1100 });
+    },
+    // 러너: 장애물에 충돌 — 둔탁한 임팩트
+    hit() {
+      tone(160, { type: 'sawtooth', dur: 0.22, gain: 0.22, endFreq: 60 });
+    },
   };
 
   window.Sound = Sound;

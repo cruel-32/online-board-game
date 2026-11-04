@@ -515,4 +515,105 @@ for (const pc of [3, 4, 5]) {
   }
 }
 
+/* ---------- 16: 러너 — 공용 코어(시드/장애물 생성) + 엔진(순수 물리) + 봇 ---------- */
+{
+  const RC = require('../public/shared/runner-core.js');
+  const { createEngine } = require('../public/js/games/runner/engine.js');
+  const { createBot } = require('../server/src/games/runner/bot');
+
+  // 시드 결정론: 같은 시드는 항상 같은 장애물 순서
+  {
+    const rand1 = RC.mulberry32(777);
+    const rand2 = RC.mulberry32(777);
+    const seq1 = Array.from({ length: 30 }, () => RC.pickObstacle(rand1, 6).h);
+    const seq2 = Array.from({ length: 30 }, () => RC.pickObstacle(rand2, 6).h);
+    assert.deepEqual(seq1, seq2, '같은 시드는 항상 같은 장애물 순서');
+    console.log('✅ 러너 장애물 생성 결정론적 시드');
+  }
+
+  // 시간 기반 가속: 개인 성과와 무관하게 경과 시간에 따라 속도가 빨라지고, 최고치 이상으로는 안 올라감
+  {
+    assert.equal(RC.speedForFrames(0), RC.START_SPEED, '시작 속도');
+    assert(RC.speedForFrames(1000) > RC.START_SPEED, '시간이 지나면 빨라짐');
+    assert.equal(RC.speedForFrames(1e7), RC.MAX_SPEED, '충분히 지나면 최고치에서 멈춤');
+    console.log('✅ 러너 시간 기반 가속(성과 무관, 최고치 클램프)');
+  }
+
+  // 타워형 장애물은 1단 점프로는 못 넘고 2단 점프로는 넘을 수 있는 높이여야 한다(2단 점프가 실제로 필요한 이유).
+  {
+    assert(RC.SINGLE_JUMP_MAX_HEIGHT < RC.TOWER_HEIGHT, '1단 점프 최대 높이로는 타워를 못 넘어야 함');
+    assert(RC.TOWER_HEIGHT < RC.DOUBLE_JUMP_MAX_HEIGHT, '2단 점프 최대 높이면 타워를 넘을 수 있어야 함');
+    console.log('✅ 러너 타워 장애물 높이(2단 점프 필수 구간)');
+  }
+
+  // 점프/2단 점프: 공중에서 두 번까지만 허용되고, 착지해야 다시 점프 횟수가 초기화된다.
+  {
+    const e = createEngine(1);
+    const s = e.getState();
+    assert.equal(s.grounded, true, '시작은 바닥');
+    assert.equal(e.jump(), true, '1단 점프 성공');
+    assert.equal(s.grounded, false);
+    assert.equal(e.jump(), true, '공중에서 2단 점프 성공');
+    assert.equal(e.jump(), false, '점프 두 번을 다 쓰면 추가 점프 불가');
+
+    let landed = false;
+    for (let i = 0; i < 200 && !landed; i++) {
+      s.obstacles.length = 0; // 점프 역학만 검증(장애물과 우연히 부딪혀 죽지 않도록 매 틱 비움)
+      e.tick(RC.FRAME_MS);
+      if (s.grounded) landed = true;
+    }
+    assert(landed, '충분한 시간 후 다시 바닥에 착지해야 함');
+    assert.equal(s.jumpsUsed, 0, '착지 후 점프 횟수 초기화');
+    assert.equal(e.jump(), true, '착지 후 다시 점프 가능');
+    console.log('✅ 러너 2단 점프(공중 2회 제한 + 착지 시 초기화)');
+  }
+
+  // 충돌 판정: 플레이어 박스와 겹치는 장애물이 있으면 그 틱에 죽는다.
+  {
+    const e = createEngine(2);
+    const s = e.getState();
+    s.obstacles.push({ x: 55, w: 40, h: 50, tall: false });
+    const r = e.tick(20);
+    assert.equal(r.dead, true, '장애물과 겹치면 이번 틱에 충돌 판정');
+    assert.equal(s.dead, true);
+    const r2 = e.tick(20);
+    assert.equal(r2.dead, false, '이미 죽은 뒤에는 "새로 죽음" 이벤트가 다시 발생하지 않음');
+    console.log('✅ 러너 충돌 판정');
+  }
+
+  // 봇 AI: 반응시간 휴리스틱이 실제로 장애물을 피해 적당히 오래 버티는지 검증(placeholder가 아님을 보장)
+  {
+    const TICK_MS = 40;
+    let totalMs = 0;
+    for (let trial = 0; trial < 5; trial++) {
+      const e = createEngine(100 + trial);
+      const s = e.getState();
+      const bot = createBot();
+      for (let i = 0; i < 1500 && !s.dead; i++) {
+        bot.step(e);
+        e.tick(TICK_MS);
+      }
+      totalMs += s.elapsedMs;
+    }
+    const avgMs = totalMs / 5;
+    assert(avgMs > 5000, `휴리스틱 봇은 평균 5초 이상 버텨야 함(실제: ${avgMs.toFixed(0)}ms)`);
+    console.log(`✅ 러너 봇 AI(5회 평균 ${(avgMs / 1000).toFixed(1)}초 생존)`);
+  }
+
+  // 퍼징: 무작위로 점프를 눌러도 예외 없이 동작하고, 내부 불변식(점프 횟수 범위 등)이 항상 유지된다.
+  {
+    for (let trial = 0; trial < 10; trial++) {
+      const e = createEngine(2000 + trial);
+      const s = e.getState();
+      for (let i = 0; i < 2000; i++) {
+        if (Math.random() < 0.08) e.jump();
+        e.tick(16 + Math.random() * 20);
+        assert(s.jumpsUsed >= 0 && s.jumpsUsed <= 2, '점프 횟수는 항상 0~2 사이');
+        assert(s.airHeight >= 0, '높이는 항상 0 이상(바닥 아래로 내려가지 않음)');
+      }
+    }
+    console.log('✅ 러너 무작위 입력 퍼징(2000스텝 × 10회, 불변식 유지)');
+  }
+}
+
 console.log('\n🎉 모든 테스트 통과');
