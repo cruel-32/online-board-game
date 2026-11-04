@@ -31,6 +31,7 @@
     countdownStart: null, _lastCountdownLabel: null,
     groundScroll: 0,
     dustParticles: [],
+    deathToasts: [], // [{text, start, until}] — 상대가 죽을 때마다 쌓이는 큰 알림(가시성 강화)
 
     init(canvas, callbacks) {
       this.canvas = canvas;
@@ -126,6 +127,15 @@
       if (this.callbacks.onDead) this.callbacks.onDead(elapsedMs);
     },
 
+    // 상대가 죽었을 때 index.js가 호출 — 작은 랭킹 패널만으로는 놓치기 쉬우므로 화면 중앙에
+    // 크게 한 번 더 알린다(여러 명이 거의 동시에 죽어도 겹쳐 보이게 살짝 아래로 쌓는다).
+    notifyOpponentDown(name) {
+      const now = performance.now();
+      this.deathToasts.push({ text: `💀 ${name}님 탈락!`, start: now, until: now + 1800 });
+      if (this.deathToasts.length > 4) this.deathToasts.shift();
+      if (window.Sound) window.Sound.rivalDown();
+    },
+
     jump() {
       if (!this.engine || this.myDead || this.finished || this.paused) return;
       const st = this.engine.getState();
@@ -165,8 +175,15 @@
       this.drawRanking(ctx, L);
       this.drawTimer(ctx);
       if (this.myDead && !this.finished) this.drawDeadBanner(ctx);
+      if (this.isSoleSurvivor() && !this.finished) this.drawSoleSurvivorBadge(ctx);
       if (this.finished) this.drawFinishedOverlay(ctx);
       if (this.countdownStart != null) this.drawCountdown(ctx);
+      this.drawDeathToasts(ctx);
+    },
+
+    // 나 말고 전원이 이미 탈락했고 나는 아직 살아있는 상태 — 혼자 남아 기록 경신 중임을 알려준다.
+    isSoleSurvivor() {
+      return !this.myDead && this.opponents.length > 0 && this.opponents.every((o) => !o.alive);
     },
 
     drawBackground(ctx) {
@@ -290,6 +307,18 @@
       ctx.shadowBlur = 8;
       ctx.fillText(fmtTime(ms), this.W / 2, 30);
       ctx.restore();
+
+      // 생존자 수(나 포함) — 한눈에 몇 명이나 남았는지 보여준다(랭킹 패널보다 더 눈에 띄게).
+      if (this.opponents.length) {
+        const aliveCount = (this.myDead ? 0 : 1) + this.opponents.filter((o) => o.alive).length;
+        const total = 1 + this.opponents.length;
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.font = '700 12px sans-serif';
+        ctx.fillStyle = aliveCount <= 1 ? '#ffd76e' : 'rgba(210,225,255,0.8)';
+        ctx.fillText(`생존 ${aliveCount} / ${total}`, this.W / 2, 48);
+        ctx.restore();
+      }
     },
 
     drawRanking(ctx, L) {
@@ -302,18 +331,79 @@
         // 대신 그 값을 그대로 쓴다(그렇지 않으면 결과 팝업이 뜬 뒤에도 숫자가 계속 올라가 보임).
         ms: (o.alive && !this.finished) ? liveMs : (o.survivedMs || 0),
       }));
+      // 아직 살아있는 쪽을 위로 모아 "누가 아직 위협적인지"를 한눈에 보기 쉽게 한다.
+      rows.sort((a, b) => (b.alive - a.alive));
       const x = L.x + L.w - 8, yTop = L.y + 8;
-      const rowH = 18;
+      const rowW = 158, rowH = 22;
       ctx.save();
-      ctx.textAlign = 'right';
-      ctx.font = '700 12px sans-serif';
       rows.forEach((r, i) => {
         const y = yTop + i * rowH;
-        ctx.fillStyle = 'rgba(0,0,0,0.35)';
-        ctx.fillRect(x - 150, y - 12, 150, 16);
-        ctx.fillStyle = r.alive ? '#9fe8ff' : '#6b7280';
-        ctx.fillText(`${(r.name || '').slice(0, 8)}${r.alive ? '' : '💀'} ${fmtTime(r.ms)}`, x - 4, y);
+        ctx.globalAlpha = r.alive ? 1 : 0.55;
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(x - rowW, y - 15, rowW, 19, 5);
+        else ctx.rect(x - rowW, y - 15, rowW, 19);
+        ctx.fill();
+        // 생존 표시 점(초록 네온 = 생존, 회색 = 탈락) — 색만으로도 바로 구분되게.
+        const dotX = x - rowW + 10, dotY = y - 5;
+        ctx.beginPath();
+        ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
+        if (r.alive) {
+          ctx.fillStyle = '#4ee37a';
+          ctx.shadowColor = '#4ee37a';
+          ctx.shadowBlur = 6;
+        } else {
+          ctx.fillStyle = '#7a8090';
+          ctx.shadowBlur = 0;
+        }
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        ctx.textAlign = 'right';
+        ctx.font = r.alive ? '800 12px sans-serif' : '700 12px sans-serif';
+        ctx.fillStyle = r.alive ? '#eaf6ff' : '#9099a8';
+        const label = `${(r.name || '').slice(0, 8)}${r.alive ? '' : ' 💀'}`;
+        ctx.fillText(label, x - 4, y - 7);
+        ctx.font = '700 11px sans-serif';
+        ctx.fillStyle = r.alive ? '#9fe8ff' : '#747b89';
+        ctx.fillText(fmtTime(r.ms), x - 4, y + 6);
       });
+      ctx.restore();
+    },
+
+    // 상대가 죽는 순간 화면 중앙 위쪽에 크게 띄우는 알림(쌓이면 아래로 밀려나며 겹쳐 보임).
+    drawDeathToasts(ctx) {
+      this.deathToasts = this.deathToasts.filter((t) => this.anim < t.until);
+      this.deathToasts.forEach((t, i) => {
+        const total = t.until - t.start;
+        const p = Math.min(1, (this.anim - t.start) / total);
+        const fadeIn = Math.min(1, p / 0.12);
+        const fadeOut = p > 0.7 ? Math.max(0, (1 - p) / 0.3) : 1;
+        const alpha = Math.min(fadeIn, fadeOut);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        ctx.font = '800 17px sans-serif';
+        const y = this.H * 0.16 + i * 24;
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(10,6,6,0.85)';
+        ctx.strokeText(t.text, this.W / 2, y);
+        ctx.fillStyle = '#ff9a9a';
+        ctx.fillText(t.text, this.W / 2, y);
+        ctx.restore();
+      });
+    },
+
+    // 상대가 전원 탈락했고 나만 남았을 때 — 왜 게임이 안 끝나는지, 지금 뭘 하고 있는지 알려준다.
+    drawSoleSurvivorBadge(ctx) {
+      ctx.save();
+      ctx.textAlign = 'center';
+      const pulse = 0.75 + 0.25 * Math.sin(this.anim / 260);
+      ctx.font = '700 13px sans-serif';
+      ctx.fillStyle = `rgba(255,215,110,${pulse})`;
+      ctx.shadowColor = '#ffd76e';
+      ctx.shadowBlur = 10 * pulse;
+      ctx.fillText('🏁 최후 생존! 내 최고 기록에 도전 중…', this.W / 2, 68);
       ctx.restore();
     },
 

@@ -59,7 +59,7 @@
 
   const Runner = {
     id: 'runner',
-    name: '러너',
+    name: '점프러너',
     ctx: null,
     state: null,
     lastSeed: null,
@@ -73,7 +73,7 @@
     reported: false,
 
     renderSetup(container) {
-      container.innerHTML = `<p class="muted small-text">러너는 2~4인 · 점프(+2단 점프)로 장애물을 피하는 실시간 배틀로얄 · 최후 생존 · 봇 추가 가능.</p>`;
+      container.innerHTML = `<p class="muted small-text">점프러너는 2~4인 · 점프(+2단 점프)로 장애물을 피하는 실시간 배틀로얄 · 최후 생존 · 봇 추가 가능.</p>`;
     },
 
     mount({ canvas, hudSlot, ctx }) {
@@ -114,7 +114,7 @@
       this.state = null; this.lastSeed = null;
     },
 
-    topBarText(state) { return `${state.roomName} · 러너`; },
+    topBarText(state) { return `${state.roomName} · 점프러너`; },
 
     setState(state) {
       const prev = this.state;
@@ -129,9 +129,16 @@
       }
       UI.setOpponents((state.players || []).filter((p) => p.id !== state.you));
       UI.setMeta({ finished: state.finished, winnerName: state.winnerName });
-      if (state.finished && !(prev && prev.finished) && window.Sound) {
-        const me = (state.players || []).find((p) => p.id === state.you);
-        if (me && me.alive) window.Sound.victory();
+
+      // 상대가 방금 탈락했으면(이전 상태에서는 alive였는데 지금은 아님) 눈에 띄는 알림을 띄운다.
+      // 같은 매치 안에서만 비교해야 한다 — 새 매치로 넘어간 첫 호출에서는 prev가 "지난 매치의
+      // 끝난 상태"라 모두 죽어 있으므로, seed가 같을 때만 비교해 오탐을 막는다.
+      if (prev && prev.seed === state.seed) {
+        const prevAlive = new Map((prev.players || []).map((p) => [p.id, p.alive]));
+        for (const p of (state.players || [])) {
+          if (p.id === state.you) continue;
+          if (prevAlive.get(p.id) === true && p.alive === false) UI.notifyOpponentDown(p.name);
+        }
       }
     },
 
@@ -257,6 +264,11 @@
       $('run-result-ready').textContent = '다시 게임 준비';
       $('run-result-room').style.display = 'none';
       window.Modal.open('run-result-popup');
+
+      // 이제 매치는 전원이 죽어야 끝나므로(혼자 남아도 계속 플레이), 결과가 뜬 시점엔 상태상
+      // "살아있는 사람"이 없다 — 승리 여부는 결과 테이블의 내 순위로 판단해야 한다.
+      const myRow = (result.rows || []).find((r) => r.id === this.ctx.myId);
+      if (myRow && myRow.rank === 1 && window.Sound) window.Sound.victory();
     },
 
     closeResult() { window.Modal.close('run-result-popup'); },

@@ -271,6 +271,10 @@
     hit() {
       tone(160, { type: 'sawtooth', dur: 0.22, gain: 0.22, endFreq: 60 });
     },
+    // 러너: 상대가 탈락함(내가 아님) — 짧고 가벼운 "띵" 알림(내 충돌음보다 약하게)
+    rivalDown() {
+      tone(380, { type: 'triangle', dur: 0.1, gain: 0.12, endFreq: 220 });
+    },
   };
 
   window.Sound = Sound;

@@ -520,6 +520,38 @@ for (const pc of [3, 4, 5]) {
   const RC = require('../public/shared/runner-core.js');
   const { createEngine } = require('../public/js/games/runner/engine.js');
   const { createBot } = require('../server/src/games/runner/bot');
+  const { Game } = require('../server/src/games/runner/game');
+
+  // 매치 지속: 상대가 한 명만 남아도 끝나지 않고, 마지막 생존자도 직접 죽어야 끝난다
+  // (혼자 남은 뒤에도 자기 기록에 계속 도전할 수 있어야 한다는 요구사항).
+  {
+    const g = new Game([{ id: 'a' }, { id: 'b' }, { id: 'c' }]);
+    g.eliminate('a', 1000);
+    assert.equal(g.finished, false, '한 명 탈락만으로는 끝나지 않음');
+    g.eliminate('b', 2000);
+    assert.equal(g.finished, false, 'c 혼자 남아도 끝나지 않고 계속 플레이해야 함');
+    assert.equal(g.alive.size, 1, '마지막 한 명(c)은 계속 생존 상태로 남아 있어야 함');
+    g.eliminate('c', 5000);
+    assert.equal(g.finished, true, '마지막 생존자까지 스스로 탈락해야 비로소 끝남');
+    assert.equal(g.winnerId, 'c', '가장 오래 버틴(survivedMs 최대) 사람이 1등');
+    const rows = g.results();
+    assert.deepEqual(rows.map((r) => r.id), ['c', 'b', 'a'], '버틴 시간이 길수록 높은 순위');
+    assert.equal(rows[0].survivedMs, 5000, '1등의 기록은 자신이 보고한 버틴 시간 그대로');
+    console.log('✅ 러너 매치 지속(최후 생존자도 직접 죽어야 종료, 혼자서도 기록 갱신 가능)');
+  }
+
+  // 순위는 eliminate() 호출 순서가 아니라 survivedMs 값으로 매긴다 — 사람은 네트워크를 거쳐
+  // 죽음을 보고하므로, 실제로는 더 오래 버틴 쪽의 eliminate() 호출이 지연 때문에 먼저 일어날
+  // 수 있다. 호출 순서(b 먼저, a 나중)와 실제 생존 시간(a > b)이 어긋나는 상황을 재현한다.
+  {
+    const g = new Game([{ id: 'a' }, { id: 'b' }]);
+    g.eliminate('b', 2000); // b의 보고가 먼저 도착(실제로는 a보다 덜 버팀)
+    g.eliminate('a', 9000); // a의 보고가 늦게 도착했지만, 실제로는 훨씬 오래 버팀
+    assert.equal(g.winnerId, 'a', '호출 순서가 아니라 더 오래 버틴 쪽이 1등이어야 함');
+    const rows = g.results();
+    assert.deepEqual(rows.map((r) => r.id), ['a', 'b'], '보고 도착 순서와 무관하게 survivedMs 내림차순');
+    console.log('✅ 러너 순위는 탈락 보고 도착 순서가 아니라 버틴 시간 값 기준');
+  }
 
   // 시드 결정론: 같은 시드는 항상 같은 장애물 순서
   {

@@ -10,6 +10,8 @@
  *   앱 규모에서는 충분히 안전하고, 틱 루프 없이도 동작해 서버 부하가 거의 없다).
  * - 봇만 예외로 서버가 직접 public/js/games/runner/engine.js 인스턴스를 들고 startBots()가
  *   시작하는 재귀 타이머로 진행시킨다(틱마다 bot.js의 반응시간 휴리스틱으로 점프 여부 결정).
+ * - 상대가 한 명만 남아도 매치를 끝내지 않는다 — 마지막 생존자도 직접 충돌해 죽어야 끝난다
+ *   (혼자 남은 뒤에도 자기 최고 기록에 계속 도전할 수 있도록; game.js의 checkEnd 참고).
  */
 const { Game } = require('./game');
 const Engine = require('../../../../public/js/games/runner/engine.js');
@@ -35,7 +37,7 @@ function scheduleBotTick(game, room, botId, engine, bot, hooks) {
 module.exports = {
   meta: {
     id: 'runner',
-    name: '러너',
+    name: '점프러너',
     minPlayers: 2,
     maxPlayers: 4,
     settleDelay: 2500,
