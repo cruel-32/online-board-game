@@ -271,6 +271,10 @@
     hit() {
       tone(160, { type: 'sawtooth', dur: 0.22, gain: 0.22, endFreq: 60 });
     },
+    // 러너: 생명력이 남아 살아남은 피격(게임오버 아님) — hit()보다 짧고 가벼운 "퍽"
+    hitSoft() {
+      tone(260, { type: 'square', dur: 0.12, gain: 0.18, endFreq: 100 });
+    },
     // 러너: 상대가 탈락함(내가 아님) — 짧고 가벼운 "띵" 알림(내 충돌음보다 약하게)
     rivalDown() {
       tone(380, { type: 'triangle', dur: 0.1, gain: 0.12, endFreq: 220 });

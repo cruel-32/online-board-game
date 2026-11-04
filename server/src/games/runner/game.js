@@ -22,9 +22,10 @@ const core = require('../../../../public/shared/runner-core.js');
  * 신뢰하는 값(survivedMs) 자체를 기준으로 정렬한다.
  */
 class Game {
-  constructor(players) {
+  constructor(players, lives) {
     this.playerIds = players.map((p) => p.id);
     this.seed = core.randomSeed(); // 모두 같은 장애물 순서를 받는다(공정한 동시 진행)
+    this.lives = core.clampLives(lives); // 방 옵션 "생명력"(1~3) — 봇 엔진 생성 시 그대로 전달
     this.startedAt = Date.now();   // 연결 끊김 등으로 자체 보고를 못 받을 때의 벽시계 추정에 사용
     this.alive = new Set(this.playerIds);
     this.survivedMs = new Map(this.playerIds.map((id) => [id, 0]));

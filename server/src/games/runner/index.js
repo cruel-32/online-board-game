@@ -16,7 +16,7 @@
 const { Game } = require('./game');
 const Engine = require('../../../../public/js/games/runner/engine.js');
 const Bot = require('./bot');
-const { COUNTDOWN_MS } = require('../../../../public/shared/runner-core.js');
+const { COUNTDOWN_MS, DEFAULT_LIVES, clampLives } = require('../../../../public/shared/runner-core.js');
 
 const BOT_TICK_MS = 40;
 
@@ -43,13 +43,13 @@ module.exports = {
     settleDelay: 2500,
   },
 
-  defaultOptions() { return {}; },
-  normalizeOptions() { return {}; },
+  defaultOptions() { return { lives: DEFAULT_LIVES }; },
+  normalizeOptions(opts) { return { lives: clampLives(opts && opts.lives) }; },
   initPlayer() {},
   resetMatch() {},
 
   createGame(room) {
-    return new Game(room.players);
+    return new Game(room.players, room.options.lives);
   },
 
   // rooms.js가 startGame() 직후 한 번 호출한다. 방에 있는 봇마다 서버 전용 엔진 인스턴스를
@@ -58,7 +58,7 @@ module.exports = {
     const game = room.game;
     for (const p of room.players) {
       if (!p.isBot || game.botEngines.has(p.id)) continue;
-      const engine = Engine.createEngine(game.seed);
+      const engine = Engine.createEngine(game.seed, game.lives);
       const bot = Bot.createBot();
       game.botEngines.set(p.id, engine);
       setTimeout(() => scheduleBotTick(game, room, p.id, engine, bot, hooks), COUNTDOWN_MS);
@@ -93,6 +93,7 @@ module.exports = {
       roundNo: room.roundNo,
       you: viewerId,
       seed: game.seed,
+      lives: game.lives,
       finished: game.finished,
       winnerName: (() => {
         if (!game.finished || !game.winnerId) return null;

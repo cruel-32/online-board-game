@@ -72,8 +72,27 @@
     rebindListener: null,
     reported: false,
 
-    renderSetup(container) {
-      container.innerHTML = `<p class="muted small-text">점프러너는 2~4인 · 점프(+2단 점프)로 장애물을 피하는 실시간 배틀로얄 · 최후 생존 · 봇 추가 가능.</p>`;
+    renderSetup(container, room, { isHost, send }) {
+      const lives = (room.options && room.options.lives) || 1;
+      container.innerHTML = `
+        <p class="muted small-text">점프러너는 2~4인 · 점프(+2단 점프)로 장애물을 피하는 실시간 배틀로얄 · 최후 생존 · 봇 추가 가능.</p>
+        <div class="field inline">
+          <span>생명력</span>
+          <div class="stepper">
+            <button class="btn tiny" data-lives="-1"${isHost && lives > 1 ? '' : ' disabled'}>−</button>
+            <span class="stepper-value">${lives}</span>
+            <button class="btn tiny" data-lives="1"${isHost && lives < 3 ? '' : ' disabled'}>+</button>
+          </div>
+        </div>
+        <p class="muted small-text">생명력이 2 이상이면, 부딪혀도 즉시 죽지 않고 생명력이 1 줄며 잠시 무적(깜빡임) 상태가 됩니다. 생명력이 1인 상태에서 또 부딪히면 게임 오버.</p>`;
+      if (!isHost) return;
+      container.querySelectorAll('[data-lives]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const cur = (room.options && room.options.lives) || 1;
+          const next = Math.max(1, Math.min(3, cur + Number(btn.dataset.lives)));
+          send({ type: 'set_option', key: 'lives', value: next });
+        });
+      });
     },
 
     mount({ canvas, hudSlot, ctx }) {
@@ -125,7 +144,7 @@
       if (state.seed !== this.lastSeed) {
         this.lastSeed = state.seed;
         this.reported = false;
-        UI.startLocal(state.seed);
+        UI.startLocal(state.seed, state.lives);
       }
       UI.setOpponents((state.players || []).filter((p) => p.id !== state.you));
       UI.setMeta({ finished: state.finished, winnerName: state.winnerName });

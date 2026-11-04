@@ -54,6 +54,18 @@
   // (봇이 아닌, 끝까지 살아남은 사람의 최종 기록 등) 이 유예 시간만큼 빼서 사람/봇의 자체 보고
   // 시간(둘 다 카운트다운이 끝난 시점을 0으로 삼음)과 기준을 맞춘다.
   const COUNTDOWN_MS = 3400;
+
+  /* ---------- 생명력(방 옵션) ---------- */
+  const MIN_LIVES = 1;
+  const MAX_LIVES = 3;
+  const DEFAULT_LIVES = 1; // 기본값 1 = 기존과 동일(한 번 부딪히면 바로 게임오버)
+  const INVINCIBLE_MS = 2000; // 생명력이 줄어든 뒤 무적(깜빡임) 지속 시간
+  const BLINK_INTERVAL_MS = 90; // 무적 중 깜빡이는 주기(렌더러가 사용)
+
+  function clampLives(v) {
+    const n = Math.round(Number(v));
+    return Number.isFinite(n) ? clamp(n, MIN_LIVES, MAX_LIVES) : DEFAULT_LIVES;
+  }
   const MIN_GAP_MS = 550;   // 장애물 "앞쪽 간격"의 최소/최대(시간 기준 — 속도가 빨라져도 반응시간은 비슷하게 유지됨)
   const MAX_GAP_MS = 1150;
 
@@ -112,6 +124,7 @@
     SINGLE_JUMP_MAX_HEIGHT, DOUBLE_JUMP_MAX_HEIGHT,
     OBSTACLE_WIDTH_SINGLE, OBSTACLE_WIDTH_WIDE, HEIGHT_LOW, HEIGHT_MED, HEIGHT_HIGH,
     TOWER_WIDTH, TOWER_HEIGHT, INITIAL_SPAWN_DELAY_PX, COUNTDOWN_MS,
+    MIN_LIVES, MAX_LIVES, DEFAULT_LIVES, INVINCIBLE_MS, BLINK_INTERVAL_MS, clampLives,
     mulberry32, randomSeed, difficultyOf, pickObstacle, gapFor, speedForFrames,
   };
 });

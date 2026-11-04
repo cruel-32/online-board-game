@@ -32,6 +32,8 @@
     groundScroll: 0,
     dustParticles: [],
     deathToasts: [], // [{text, start, until}] — 상대가 죽을 때마다 쌓이는 큰 알림(가시성 강화)
+    hitFlashUntil: 0, // 생명력이 남아 살아남은 피격 순간의 화면 플래시
+    shakeUntil: 0,     // 같은 순간의 화면 흔들림
 
     init(canvas, callbacks) {
       this.canvas = canvas;
@@ -62,6 +64,7 @@
           const st = this.engine.getState();
           this.groundScroll = (this.groundScroll + st.speed * (dt / core.FRAME_MS)) % 40;
           if (ev.dead) this._reportDead(ev.elapsedMs);
+          else if (ev.hit) this._onHit();
         }
         this.render();
         requestAnimationFrame(loop);
@@ -84,13 +87,15 @@
       canvas.style.top = `${topReserve}px`;
     },
 
-    startLocal(seed) {
-      this.engine = Engine.createEngine(seed);
+    startLocal(seed, lives) {
+      this.engine = Engine.createEngine(seed, lives);
       this.myDead = false;
       this.paused = true;
       this.countdownStart = performance.now();
       this._lastCountdownLabel = null;
       this.dustParticles = [];
+      this.hitFlashUntil = 0;
+      this.shakeUntil = 0;
       this.localStartAnim = null; // paused가 풀리는 순간(카운트다운 종료) 기록 — 내가 죽어도 계속 흐르는 독립 시계
     },
 
@@ -125,6 +130,15 @@
       this.myDead = true;
       if (window.Sound) window.Sound.hit();
       if (this.callbacks.onDead) this.callbacks.onDead(elapsedMs);
+    },
+
+    // 생명력이 남아있는 상태로 부딪혔을 때(죽지 않음) — 짧은 플래시+흔들림+효과음으로
+    // "맞았다"는 걸 분명히 알리고, 이어지는 무적 구간은 render()가 캐릭터를 깜빡여 표시한다.
+    _onHit() {
+      const now = performance.now();
+      this.hitFlashUntil = now + 260;
+      this.shakeUntil = now + 220;
+      if (window.Sound) window.Sound.hitSoft();
     },
 
     // 상대가 죽었을 때 index.js가 호출 — 작은 랭킹 패널만으로는 놓치기 쉬우므로 화면 중앙에
@@ -165,6 +179,11 @@
       const ctx = this.ctx;
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       ctx.clearRect(0, 0, this.W, this.H);
+      ctx.save();
+      if (this.anim < this.shakeUntil) {
+        const power = Math.min(1, (this.shakeUntil - this.anim) / 220) * 6;
+        ctx.translate((Math.random() - 0.5) * power, (Math.random() - 0.5) * power);
+      }
       this.drawBackground(ctx);
       const L = this.layout();
       ctx.save();
@@ -172,13 +191,44 @@
       ctx.scale(L.scale, L.scale);
       this.drawScene(ctx);
       ctx.restore();
+      this.drawHitFlash(ctx);
       this.drawRanking(ctx, L);
       this.drawTimer(ctx);
+      this.drawHearts(ctx);
       if (this.myDead && !this.finished) this.drawDeadBanner(ctx);
       if (this.isSoleSurvivor() && !this.finished) this.drawSoleSurvivorBadge(ctx);
       if (this.finished) this.drawFinishedOverlay(ctx);
       if (this.countdownStart != null) this.drawCountdown(ctx);
       this.drawDeathToasts(ctx);
+      ctx.restore();
+    },
+
+    drawHitFlash(ctx) {
+      if (this.anim >= this.hitFlashUntil) return;
+      const t = (this.hitFlashUntil - this.anim) / 260;
+      ctx.save();
+      ctx.globalAlpha = 0.35 * t;
+      ctx.fillStyle = '#ff3b3b';
+      ctx.fillRect(0, 0, this.W, this.H);
+      ctx.restore();
+    },
+
+    // 생명력 하트 — 생명력 1(기본값)일 때는 굳이 보여줄 게 없으니 2 이상일 때만 그린다.
+    drawHearts(ctx) {
+      const st = this.engine ? this.engine.getState() : null;
+      if (!st || st.maxLives <= 1) return;
+      const size = 16, gap = 5;
+      const totalW = st.maxLives * size + (st.maxLives - 1) * gap;
+      const x0 = this.W / 2 - totalW / 2, y = 58;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = `${size}px sans-serif`;
+      for (let i = 0; i < st.maxLives; i++) {
+        const filled = i < st.lives;
+        ctx.globalAlpha = filled ? 1 : 0.3;
+        ctx.fillText('❤', x0 + i * (size + gap) + size / 2, y + size * 0.8);
+      }
+      ctx.restore();
     },
 
     // 나 말고 전원이 이미 탈락했고 나는 아직 살아있는 상태 — 혼자 남아 기록 경신 중임을 알려준다.
@@ -243,7 +293,13 @@
       const yy = y + (PLAYER_H - h);
       const dead = !!this.myDead;
 
+      // 무적 중에는 실시간(anim) 기준으로 깜빡인다 — 엔진 틱이 아니라 실제 경과 시간을 써서
+      // 프레임레이트와 무관하게 일정한 주기로 깜빡이게 한다.
       ctx.save();
+      if (st.invincible) {
+        const blinkOn = Math.floor(this.anim / core.BLINK_INTERVAL_MS) % 2 === 0;
+        ctx.globalAlpha = blinkOn ? 1 : 0.3;
+      }
       ctx.translate(PLAYER_X + w / 2, yy + h / 2);
       // 몸통(충돌 시 붉게)
       ctx.fillStyle = dead ? '#ff6b57' : '#5ad1ff';
@@ -280,6 +336,7 @@
         ctx.lineTo(PLAYER_X + w * 0.7 + Math.sin(t + Math.PI) * 6, GROUND_Y);
         ctx.stroke();
       }
+      ctx.restore();
     },
 
     drawDust(ctx) {
@@ -403,7 +460,7 @@
       ctx.fillStyle = `rgba(255,215,110,${pulse})`;
       ctx.shadowColor = '#ffd76e';
       ctx.shadowBlur = 10 * pulse;
-      ctx.fillText('🏁 최후 생존! 내 최고 기록에 도전 중…', this.W / 2, 68);
+      ctx.fillText('🏁 최후 생존! 내 최고 기록에 도전 중…', this.W / 2, 92);
       ctx.restore();
     },
 

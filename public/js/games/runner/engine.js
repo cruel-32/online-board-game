@@ -19,12 +19,14 @@
   const core = (typeof module === 'object' && module.exports) ? require('../../../shared/runner-core.js') : self.RunnerCore;
   const {
     WORLD_W, GROUND_Y, PLAYER_X, PLAYER_W, PLAYER_H, HITBOX_INSET,
-    FRAME_MS, GRAVITY, JUMP_SPEED, INITIAL_SPAWN_DELAY_PX,
-    mulberry32, pickObstacle, gapFor, speedForFrames,
+    FRAME_MS, GRAVITY, JUMP_SPEED, INITIAL_SPAWN_DELAY_PX, INVINCIBLE_MS,
+    mulberry32, pickObstacle, gapFor, speedForFrames, clampLives,
   } = core;
 
-  function createEngine(seed) {
+  // lives: 방 옵션 "생명력"(1~3, 기본 1 = 기존과 동일하게 한 번 부딪히면 바로 게임오버).
+  function createEngine(seed, lives) {
     const rand = mulberry32(seed);
+    const maxLives = clampLives(lives);
 
     const st = {
       frame: 0,
@@ -37,6 +39,11 @@
       jumpsUsed: 0,
       obstacles: [],    // [{x, w, h, tall}] — x는 WORLD 좌표계(오른쪽에서 생성되어 왼쪽으로 흐름)
       spawnCountdown: INITIAL_SPAWN_DELAY_PX,
+      maxLives,
+      lives: maxLives,
+      invincible: false,
+      invincibleUntilMs: 0,
+      justHit: false, // 이번 stepFrame에서 막 부딪혔는지(생명력이 남아 무적으로 넘어간 경우 포함)
       dead: false,
     };
 
@@ -60,6 +67,8 @@
       st.frame++;
       st.elapsedMs += FRAME_MS;
       st.speed = speedForFrames(st.frame);
+      st.justHit = false;
+      if (st.invincible && st.elapsedMs >= st.invincibleUntilMs) st.invincible = false;
 
       // 중력/점프
       if (!st.grounded) {
@@ -84,10 +93,22 @@
         st.spawnCountdown = ob.w + gapFor(rand, st.speed);
       }
 
-      // 충돌 판정
+      // 충돌 판정 — 무적 중에는 장애물을 그대로 통과한다.
+      if (st.invincible) return;
       const pBox = playerBox();
       for (const o of st.obstacles) {
-        if (boxesOverlap(pBox, obstacleBox(o))) { st.dead = true; break; }
+        if (!boxesOverlap(pBox, obstacleBox(o))) continue;
+        st.justHit = true;
+        st.lives -= 1;
+        if (st.lives <= 0) {
+          st.dead = true;
+        } else {
+          // 생명력이 남아있으면 즉시 무적으로 전환해, 같은 장애물에 같은 프레임/다음 몇 프레임
+          // 동안 다시 겹쳐도 중복으로 깎이지 않게 한다.
+          st.invincible = true;
+          st.invincibleUntilMs = st.elapsedMs + INVINCIBLE_MS;
+        }
+        break;
       }
     }
 
@@ -100,15 +121,18 @@
         return true;
       },
 
-      // dtMs 경과만큼 가상 프레임 단위로 진행. 이번 호출에서 새로 죽었으면 { dead: true }.
+      // dtMs 경과만큼 가상 프레임 단위로 진행. 이번 호출에서 새로 죽었으면 dead:true,
+      // (생명력이 남아) 맞고 무적으로 넘어갔을 뿐이면 hit:true(dead:false)로 알린다.
       tick(dtMs) {
         const wasDead = st.dead;
         st.frameAccum += dtMs;
+        let hit = false;
         while (st.frameAccum >= FRAME_MS && !st.dead) {
           st.frameAccum -= FRAME_MS;
           stepFrame();
+          if (st.justHit) hit = true;
         }
-        return { dead: st.dead && !wasDead, elapsedMs: st.elapsedMs };
+        return { dead: st.dead && !wasDead, hit, elapsedMs: st.elapsedMs, lives: st.lives };
       },
 
       getState() { return st; },

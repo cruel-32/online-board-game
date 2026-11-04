@@ -613,6 +613,63 @@ for (const pc of [3, 4, 5]) {
     console.log('✅ 러너 충돌 판정');
   }
 
+  // 기본 생명력(옵션 미지정)은 기존과 동일하게 1 — 한 번만 부딪혀도 즉시 게임오버(하위 호환).
+  {
+    const e = createEngine(2);
+    const s = e.getState();
+    assert.equal(s.maxLives, 1, '생명력 옵션을 안 주면 기본값 1');
+    assert.equal(s.lives, 1);
+    console.log('✅ 러너 기본 생명력(옵션 없으면 기존과 동일하게 1)');
+  }
+
+  // 생명력: 남아있는 동안은 부딪혀도 죽지 않고 무적으로 전환되며, 무적 중에는 겹쳐 있어도
+  // 추가로 깎이지 않는다. 무적이 끝난 뒤 생명력이 1인 채로 또 부딪히면 그제야 게임오버.
+  {
+    const e = createEngine(3, 3); // seed=3, 생명력=3
+    const s = e.getState();
+    assert.equal(s.maxLives, 3);
+    assert.equal(s.lives, 3);
+
+    const hitOnce = () => {
+      s.obstacles.length = 0;
+      s.obstacles.push({ x: 55, w: 1000, h: 50, tall: false }); // 넓게 깔아 계속 겹치게 함
+      return e.tick(20);
+    };
+    const waitOutInvincibility = () => {
+      let elapsed = 0;
+      // 매 틱마다 비워야 한다 — 비워두지 않으면 자연 생성된 장애물이 대기 중에 우연히
+      // 겹쳐 무적이 끝나자마자 의도치 않게 생명력을 또 깎아버릴 수 있다.
+      while (s.invincible && elapsed < RC.INVINCIBLE_MS + 500) {
+        s.obstacles.length = 0;
+        e.tick(50);
+        elapsed += 50;
+      }
+      s.obstacles.length = 0;
+      assert.equal(s.invincible, false, '무적 시간이 끝나야 함');
+    };
+
+    let r = hitOnce();
+    assert.equal(r.dead, false, '생명력이 남아있으면 죽지 않음');
+    assert.equal(r.hit, true, '피격 이벤트는 발생');
+    assert.equal(s.lives, 2, '생명력 1 감소(3→2)');
+    assert.equal(s.invincible, true, '즉시 무적으로 전환');
+
+    for (let i = 0; i < 10; i++) e.tick(50); // 장애물과 계속 겹친 채로 시간 진행
+    assert.equal(s.lives, 2, '무적 중에는 계속 겹쳐도 추가로 깎이지 않음');
+
+    waitOutInvincibility();
+    r = hitOnce();
+    assert.equal(r.dead, false);
+    assert.equal(s.lives, 1, '생명력 1 감소(2→1), 아직 생존');
+    assert.equal(s.invincible, true);
+
+    waitOutInvincibility();
+    r = hitOnce();
+    assert.equal(r.dead, true, '생명력이 1일 때 또 부딪히면 게임오버');
+    assert.equal(s.lives, 0);
+    console.log('✅ 러너 생명력(피격 시 무적 전환, 생명력 소진 시에만 게임오버)');
+  }
+
   // 봇 AI: 반응시간 휴리스틱이 실제로 장애물을 피해 적당히 오래 버티는지 검증(placeholder가 아님을 보장)
   {
     const TICK_MS = 40;
